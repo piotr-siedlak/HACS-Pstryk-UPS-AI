@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pstryk UPS AI Optimizer — Klucze API",
+        "description": "Wprowadź klucze API Pstryk oraz Claude. Oba są wymagane do działania integracji.",
+        "data": {
+          "pstryk_api_key": "Klucz API Pstryk",
+          "claude_api_key": "Klucz API Claude (Anthropic)"
+        },
+        "data_description": {
+          "pstryk_api_key": "Token API do cen energii elektrycznej Pstryk. Możesz go uzyskać w panelu klienta Pstryk.",
+          "claude_api_key": "Klucz API Anthropic dla modelu Claude AI. Uzyskaj go na console.anthropic.com."
+        }
+      },
+      "ups_config": {
+        "title": "Parametry UPS",
+        "description": "Opisz swój system akumulatorowy UPS, aby Claude mógł obliczyć optymalne harmonogramy ładowania i rozładowywania.",
+        "data": {
+          "ups_model": "Nazwa modelu UPS",
+          "battery_capacity_kwh": "Całkowita pojemność baterii (kWh)",
+          "num_strings": "Liczba szeregów akumulatorów",
+          "max_charge_rate_kw": "Maksymalna moc ładowania (kW)",
+          "max_discharge_rate_kw": "Maksymalna moc rozładowywania (kW)"
+        },
+        "data_description": {
+          "ups_model": "Opisowa nazwa UPS (np. 'SolarEdge 10kWh').",
+          "battery_capacity_kwh": "Łączna użyteczna pojemność akumulatorów we wszystkich szeregach.",
+          "num_strings": "Liczba równoległych szeregów akumulatorów w systemie.",
+          "max_charge_rate_kw": "Maksymalna moc, z jaką UPS może ładować akumulatory.",
+          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów."
+        }
+      },
+      "mqtt_schedule": {
+        "title": "Tematy MQTT i harmonogramowanie",
+        "description": "Skonfiguruj tematy MQTT do monitorowania mocy i sterowania UPS oraz określ, jak często odświeżane są ceny energii.",
+        "data": {
+          "mqtt_power_topic": "Temat bieżącego poboru mocy (kW)",
+          "mqtt_history_topic": "Temat historii zużycia (JSON)",
+          "mqtt_control_topic": "Temat sterowania ładowaniem UPS",
+          "mqtt_battery_topic": "Temat poziomu naładowania baterii (%, opcjonalnie)",
+          "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
+        },
+        "data_description": {
+          "mqtt_power_topic": "Temat MQTT publikujący bieżący pobór mocy w kW. Obsługuje ładunek numeryczny lub JSON.",
+          "mqtt_history_topic": "Temat MQTT publikujący historyczne zużycie kWh jako JSON ({\"daily\": {...}, \"hourly\": {...}}).",
+          "mqtt_control_topic": "Temat MQTT, do którego publikowane jest 'ON' / 'OFF' w celu włączenia/wyłączenia ładowania UPS.",
+          "mqtt_battery_topic": "Opcjonalny temat MQTT publikujący poziom naładowania akumulatora w procentach.",
+          "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk."
+        }
+      },
+      "reconfigure": {
+        "title": "Zaktualizuj klucze API",
+        "description": "Zaktualizuj klucze API Pstryk lub Claude.",
+        "data": {
+          "pstryk_api_key": "Klucz API Pstryk",
+          "claude_api_key": "Klucz API Claude (Anthropic)"
+        }
+      }
+    },
+    "error": {
+      "invalid_pstryk_key": "Nieprawidłowy klucz API Pstryk. Sprawdź klucz i spróbuj ponownie.",
+      "invalid_claude_key": "Nieprawidłowy klucz API Claude (Anthropic). Sprawdź klucz i spróbuj ponownie.",
+      "cannot_connect": "Nie można połączyć się z API Pstryk. Sprawdź połączenie sieciowe.",
+      "required": "To pole jest wymagane.",
+      "unknown": "Nieoczekiwany błąd. Sprawdź logi Home Assistant."
+    },
+    "abort": {
+      "already_configured": "Pstryk UPS AI Optimizer jest już skonfigurowany.",
+      "entry_not_found": "Nie znaleziono wpisu konfiguracyjnego.",
+      "reconfigure_successful": "Konfiguracja zaktualizowana pomyślnie."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_price": {
+        "name": "Cena energii elektrycznej"
+      },
+      "current_power": {
+        "name": "Bieżący pobór mocy"
+      },
+      "schedule_status": {
+        "name": "Status harmonogramu",
+        "state": {
+          "charge": "Ładowanie",
+          "discharge": "Rozładowywanie",
+          "idle": "Bezczynny"
+        }
+      },
+      "next_charge_window": {
+        "name": "Następne okno ładowania"
+      },
+      "next_discharge_window": {
+        "name": "Następne okno rozładowywania"
+      },
+      "battery_level": {
+        "name": "Poziom naładowania baterii"
+      },
+      "daily_savings": {
+        "name": "Szacowane oszczędności dzienne"
+      }
+    },
+    "switch": {
+      "charging": {
+        "name": "Ładowanie UPS"
+      },
+      "auto_schedule": {
+        "name": "Automatyczny harmonogram"
+      }
+    }
+  }
+}

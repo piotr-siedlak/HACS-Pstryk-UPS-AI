@@ -1,0 +1,112 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Pstryk UPS AI Optimizer — API Keys",
+        "description": "Enter your Pstryk and Claude API keys. Both are required for the integration to function.",
+        "data": {
+          "pstryk_api_key": "Pstryk API Key",
+          "claude_api_key": "Claude (Anthropic) API Key"
+        },
+        "data_description": {
+          "pstryk_api_key": "Your Pstryk electricity pricing API token. Obtain it from the Pstryk customer portal.",
+          "claude_api_key": "Your Anthropic API key for the Claude AI model. Obtain it from console.anthropic.com."
+        }
+      },
+      "ups_config": {
+        "title": "UPS Parameters",
+        "description": "Describe your UPS battery system so Claude can calculate accurate charge/discharge plans.",
+        "data": {
+          "ups_model": "UPS Model Name",
+          "battery_capacity_kwh": "Total Battery Capacity (kWh)",
+          "num_strings": "Number of Battery Strings",
+          "max_charge_rate_kw": "Maximum Charge Rate (kW)",
+          "max_discharge_rate_kw": "Maximum Discharge Rate (kW)"
+        },
+        "data_description": {
+          "ups_model": "A descriptive name for your UPS (e.g. 'SolarEdge 10kWh').",
+          "battery_capacity_kwh": "Total usable battery capacity across all strings.",
+          "num_strings": "Number of parallel battery strings in your system.",
+          "max_charge_rate_kw": "Maximum power at which the UPS can charge the battery.",
+          "max_discharge_rate_kw": "Maximum power the UPS can supply from the battery."
+        }
+      },
+      "mqtt_schedule": {
+        "title": "MQTT Topics & Scheduling",
+        "description": "Configure the MQTT topics for power monitoring and UPS control, and set how often electricity prices are refreshed.",
+        "data": {
+          "mqtt_power_topic": "Real-time Power Topic (kW)",
+          "mqtt_history_topic": "Historical Consumption Topic (JSON)",
+          "mqtt_control_topic": "UPS Charge Control Topic",
+          "mqtt_battery_topic": "Battery Level Topic (%, optional)",
+          "refresh_interval_hours": "Price Refresh Interval (hours)"
+        },
+        "data_description": {
+          "mqtt_power_topic": "MQTT topic publishing current power draw in kW. Accepts plain numeric or JSON payload.",
+          "mqtt_history_topic": "MQTT topic publishing historical kWh consumption as JSON ({\"daily\": {...}, \"hourly\": {...}}).",
+          "mqtt_control_topic": "MQTT topic to which 'ON' / 'OFF' is published to enable/disable UPS charging.",
+          "mqtt_battery_topic": "Optional MQTT topic publishing battery state of charge in percent.",
+          "refresh_interval_hours": "How often (in hours) to fetch new electricity prices from Pstryk."
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure API Keys",
+        "description": "Update your Pstryk or Claude API keys.",
+        "data": {
+          "pstryk_api_key": "Pstryk API Key",
+          "claude_api_key": "Claude (Anthropic) API Key"
+        }
+      }
+    },
+    "error": {
+      "invalid_pstryk_key": "Invalid Pstryk API key. Please check your key and try again.",
+      "invalid_claude_key": "Invalid Claude (Anthropic) API key. Please check your key and try again.",
+      "cannot_connect": "Cannot connect to the Pstryk API. Check your network connection.",
+      "required": "This field is required.",
+      "unknown": "Unexpected error. Please check your Home Assistant logs."
+    },
+    "abort": {
+      "already_configured": "Pstryk UPS AI Optimizer is already configured.",
+      "entry_not_found": "The configuration entry was not found.",
+      "reconfigure_successful": "Configuration updated successfully."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "current_price": {
+        "name": "Electricity Price"
+      },
+      "current_power": {
+        "name": "Household Power Draw"
+      },
+      "schedule_status": {
+        "name": "Schedule Status",
+        "state": {
+          "charge": "Charging",
+          "discharge": "Discharging",
+          "idle": "Idle"
+        }
+      },
+      "next_charge_window": {
+        "name": "Next Charge Window"
+      },
+      "next_discharge_window": {
+        "name": "Next Discharge Window"
+      },
+      "battery_level": {
+        "name": "Battery Level"
+      },
+      "daily_savings": {
+        "name": "Estimated Daily Savings"
+      }
+    },
+    "switch": {
+      "charging": {
+        "name": "UPS Charging"
+      },
+      "auto_schedule": {
+        "name": "Auto Schedule"
+      }
+    }
+  }
+}
