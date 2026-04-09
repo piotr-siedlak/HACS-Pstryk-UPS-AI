@@ -3,7 +3,7 @@
 Prices come from the TGE (Polish Power Exchange) spot market:
   - Current-day prices: always available.
   - Next-day prices:    published each afternoon, typically around 14:00–15:00
-                        Warsaw/CET time.  Before that hour only today's prices
+                        Warsaw/CET time.  Before that hour only today’s prices
                         exist; after it we extend the fetch window to cover the
                         full next day.
 
@@ -13,8 +13,9 @@ Endpoint used:
         &resolution=hour
         &window_start=<ISO8601 UTC>
         &window_end=<ISO8601 UTC>
-        &for_tz=Europe/Warsaw
-    Authorization: Token <api_key>
+    Authorization: <api_key>   (raw key, no prefix — Pstryk uses apiKey scheme)
+
+Note: for_tz is NOT allowed with resolution=hour per the Pstryk API spec.
 
 Response shape:
     {
@@ -23,7 +24,7 @@ Response shape:
           "start": "2024-01-15T08:00:00Z",
           "end":   "2024-01-15T09:00:00Z",
           "metrics": {
-            "pricing": { "fix_price": 0.45, "gross_price": 0.55, ... }
+            "pricing": { "tge_price": 0.07, "fix_price": 0.45, ... }
           }
         },
         ...
@@ -65,7 +66,7 @@ class PstrykAPIClient:
 
     # Field aliases tried in order when extracting price values from a frame
     _PRICE_NET_FIELDS = (
-        "fix_price", "net_price", "price", "tge_price", "energy_price", "value"
+        "tge_price", "fix_price", "net_price", "price", "energy_price", "value"
     )
     _PRICE_GROSS_FIELDS = (
         "gross_price", "price_with_vat", "price_gross", "gross"
@@ -76,7 +77,7 @@ class PstrykAPIClient:
         self._session = session
         self._base_url = PSTRYK_API_BASE_URL.rstrip("/")
 
-    # ── Window helpers ──────────────────────────────────────────────────────
+    # ── Window helpers ─────────────────────────────────────────────────────
 
     @staticmethod
     def get_fetch_window() -> tuple[datetime, datetime, bool]:
@@ -102,11 +103,9 @@ class PstrykAPIClient:
         now_warsaw = now_utc.astimezone(_WARSAW)
 
         # window_start: start of the current Warsaw hour expressed in UTC.
-        # API will return the period [window_start, window_start+1h) as the first frame.
         window_start = now_utc.replace(minute=0, second=0, microsecond=0)
 
-        # Tomorrow midnight Warsaw = "end" of the last hour of today (23:00–00:00 Warsaw).
-        # Expressed as UTC this is tomorrow's 22:00 UTC (CET) or 21:00 UTC (CEST).
+        # Tomorrow midnight Warsaw = end of the last hour of today.
         today_midnight_warsaw = (
             now_warsaw.replace(hour=0, minute=0, second=0, microsecond=0)
             + timedelta(days=1)
@@ -114,21 +113,20 @@ class PstrykAPIClient:
 
         includes_next_day = now_warsaw.hour >= NEXT_DAY_PRICES_HOUR
         if includes_next_day:
-            # Extend to end of tomorrow: day-after-tomorrow 00:00 Warsaw → UTC
             window_end = (today_midnight_warsaw + timedelta(days=1)).astimezone(timezone.utc)
         else:
             window_end = today_midnight_warsaw.astimezone(timezone.utc)
 
         return window_start, window_end, includes_next_day
 
-    # ── Public API ──────────────────────────────────────────────────────────
+    # ── Public API ──────────────────────────────────────────────────────
 
     async def async_get_prices(self) -> tuple[list[dict[str, Any]], bool]:
         """Fetch hourly TGE spot prices for the available window.
 
         Returns ``(prices, includes_next_day)`` where:
         - ``prices`` is a list of ``{"timestamp", "price", "price_gross"}`` dicts.
-        - ``includes_next_day`` is True when the response covers tomorrow's prices.
+        - ``includes_next_day`` is True when the response covers tomorrow’s prices.
 
         Before 15:00 Warsaw only current-day remaining hours are returned.
         After 15:00 Warsaw the full next day is included as well.
@@ -137,7 +135,7 @@ class PstrykAPIClient:
 
         url = f"{self._base_url}{PSTRYK_UNIFIED_ENDPOINT}"
         headers = {
-            "Authorization": f"Token {self._api_key}",
+            "Authorization": self._api_key,
             "Accept": "application/json",
         }
         params = {
@@ -145,7 +143,7 @@ class PstrykAPIClient:
             "resolution": "hour",
             "window_start": window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "window_end": window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "for_tz": WARSAW_TZ_NAME,
+            # for_tz is NOT allowed with resolution=hour per the Pstryk API spec
         }
 
         _LOGGER.debug(
@@ -187,14 +185,13 @@ class PstrykAPIClient:
 
         Makes a lightweight GET to the unified-metrics endpoint with no data
         parameters — sufficient to trigger an auth check without needing a
-        valid query window.  Only HTTP 401 is treated as a definitive "wrong
-        key" signal.  HTTP 403 means the key reached the server but may lack a
-        specific plan permission — still a valid credential.  Any other
-        response (200, 400, 404 …) also means the key was accepted.
+        valid query window.  Only HTTP 401 is treated as a definitive “wrong
+        key” signal.  Any other response (200, 400, 403, 404 …) also means the
+        key reached the server.
         """
         url = f"{self._base_url}{PSTRYK_UNIFIED_ENDPOINT}"
         headers = {
-            "Authorization": f"Token {self._api_key}",
+            "Authorization": self._api_key,
             "Accept": "application/json",
         }
         try:
@@ -208,12 +205,10 @@ class PstrykAPIClient:
                 )
                 return resp.status != 401
         except aiohttp.ClientError as exc:
-            # Network unreachable — cannot validate; let the user proceed and
-            # discover connectivity issues at runtime.
             _LOGGER.warning("Pstryk key validation: network error — %s", exc)
             raise
 
-    # ── Response parsing ────────────────────────────────────────────────────
+    # ── Response parsing ──────────────────────────────────────────────────
 
     def _parse_unified_response(self, payload: Any) -> list[dict[str, Any]]:
         """Parse the unified-metrics API response into a flat price list."""
@@ -225,7 +220,7 @@ class PstrykAPIClient:
 
         frames = payload.get("frames", [])
         if not isinstance(frames, list):
-            _LOGGER.warning("'frames' field missing or not a list in Pstryk response")
+            _LOGGER.warning("\'frames\' field missing or not a list in Pstryk response")
             return []
 
         prices: list[dict[str, Any]] = []
@@ -241,9 +236,6 @@ class PstrykAPIClient:
         if not isinstance(frame, dict):
             return None
 
-        # ── Timestamp ──────────────────────────────────────────────────────
-        # Primary field is "start" per the documented example; fall back to
-        # other plausible names the API might use.
         ts_raw: str | None = (
             frame.get("start")
             or frame.get("window_start")
@@ -257,19 +249,15 @@ class PstrykAPIClient:
 
         try:
             ts_raw = str(ts_raw).strip().replace(" ", "T")
-            # Ensure the string is timezone-aware before parsing
             if ts_raw.endswith("Z"):
-                pass  # already UTC
+                pass
             elif "+" not in ts_raw[-6:] and ts_raw[-3] != ":":
                 ts_raw += "Z"
-            datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))  # validate
+            datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
         except ValueError:
             _LOGGER.debug("Unparseable frame timestamp %r — skipping", ts_raw)
             return None
 
-        # ── Pricing data ────────────────────────────────────────────────────
-        # Look first inside metrics.pricing (documented shape), then fall back
-        # to a flat layout where fields live directly on the frame.
         pricing_src: dict[str, Any] = {}
         metrics = frame.get("metrics")
         if isinstance(metrics, dict):
@@ -278,13 +266,11 @@ class PstrykAPIClient:
                 pricing_src = candidate
 
         if not pricing_src:
-            # Flat layout: the frame itself carries the price fields
             pricing_src = frame
 
         price_net = self._extract_price(pricing_src, self._PRICE_NET_FIELDS)
         price_gross = self._extract_price(pricing_src, self._PRICE_GROSS_FIELDS)
         if price_gross == 0.0:
-            # API may not expose a separate gross field; fall back to net
             price_gross = price_net
 
         return {
