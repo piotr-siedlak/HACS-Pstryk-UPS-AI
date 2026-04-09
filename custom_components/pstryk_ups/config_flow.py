@@ -325,36 +325,96 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
 # ── Options flow ─────────────────────────────────────────────────────────────
 
+def _options_schema(
+    ups_model: str = DEFAULT_UPS_MODEL,
+    battery_capacity: float = DEFAULT_BATTERY_CAPACITY,
+    num_strings: int = DEFAULT_NUM_STRINGS,
+    max_charge_rate: float = DEFAULT_MAX_CHARGE_RATE,
+    max_discharge_rate: float = DEFAULT_MAX_DISCHARGE_RATE,
+    battery_min_pct: float = DEFAULT_BATTERY_MIN_PCT,
+    battery_max_pct: float = DEFAULT_BATTERY_MAX_PCT,
+    power_topic: str = "",
+    history_topic: str = "",
+    charge_topic: str = "",
+    discharge_topic: str = "",
+    battery_topic: str = "",
+    refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+) -> vol.Schema:
+    """Combined schema for the single-page options flow."""
+    return vol.Schema(
+        {
+            # ── UPS parameters ──────────────────────────────────────────────
+            vol.Optional(CONF_UPS_MODEL, default=ups_model): str,
+            vol.Required(CONF_BATTERY_CAPACITY, default=battery_capacity): NumberSelector(
+                NumberSelectorConfig(min=0.5, max=1000.0, step=0.5, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_NUM_STRINGS, default=num_strings): NumberSelector(
+                NumberSelectorConfig(min=1, max=100, step=1, mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_MAX_CHARGE_RATE, default=max_charge_rate): NumberSelector(
+                NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_MAX_DISCHARGE_RATE, default=max_discharge_rate): NumberSelector(
+                NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_BATTERY_MIN_PCT, default=battery_min_pct): NumberSelector(
+                NumberSelectorConfig(min=0.0, max=50.0, step=1.0, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_BATTERY_MAX_PCT, default=battery_max_pct): NumberSelector(
+                NumberSelectorConfig(min=50.0, max=100.0, step=1.0, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+            ),
+            # ── MQTT topics ─────────────────────────────────────────────────
+            vol.Required(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
+            vol.Required(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
+            vol.Required(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
+            vol.Required(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
+            vol.Required(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
+            vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
+                NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
+            ),
+        }
+    )
+
+
 class PstrykUPSOptionsFlowHandler(OptionsFlow):
-    """Options flow: change UPS params and all MQTT topics without re-adding.
+    """Options flow: change all UPS and MQTT settings without re-adding.
 
-    Accessible via Settings → Devices & Services → Pstryk UPS → Configure.
-    Two steps:
-      1. UPS parameters (model, capacity, strings, charge/discharge rates)
-      2. MQTT topics (power, history, control, battery) + price refresh interval
+    Single-page form accessible via Settings → Devices & Services →
+    Pstryk UPS AI Optimizer → Configure.
     """
-
-    def __init__(self) -> None:
-        self._options: dict[str, Any] = {}
 
     def _merged(self) -> dict[str, Any]:
         """Return current config with existing options already applied."""
         return {**self.config_entry.data, **self.config_entry.options}
 
-    # ── Step 1: UPS parameters ───────────────────────────────────────────────
-
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """First step: UPS model and battery parameters."""
+        """Single step: all UPS parameters and MQTT topics on one page."""
+        errors: dict[str, str] = {}
+
         if user_input is not None:
-            self._options.update(_parse_ups_input(user_input))
-            return await self.async_step_mqtt_topics()
+            ups = _parse_ups_input(user_input)
+            mqtt = _parse_mqtt_input(user_input)
+
+            if not mqtt[CONF_MQTT_POWER_TOPIC]:
+                errors[CONF_MQTT_POWER_TOPIC] = "required"
+            if not mqtt[CONF_MQTT_HISTORY_TOPIC]:
+                errors[CONF_MQTT_HISTORY_TOPIC] = "required"
+            if not mqtt[CONF_MQTT_CHARGE_TOPIC]:
+                errors[CONF_MQTT_CHARGE_TOPIC] = "required"
+            if not mqtt[CONF_MQTT_DISCHARGE_TOPIC]:
+                errors[CONF_MQTT_DISCHARGE_TOPIC] = "required"
+            if not mqtt[CONF_MQTT_BATTERY_TOPIC]:
+                errors[CONF_MQTT_BATTERY_TOPIC] = "required"
+
+            if not errors:
+                return self.async_create_entry(data={**ups, **mqtt})
 
         current = self._merged()
         return self.async_show_form(
             step_id="init",
-            data_schema=_ups_schema(
+            data_schema=_options_schema(
                 ups_model=current.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL),
                 battery_capacity=current.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY),
                 num_strings=current.get(CONF_NUM_STRINGS, DEFAULT_NUM_STRINGS),
@@ -362,36 +422,6 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
                 max_discharge_rate=current.get(CONF_MAX_DISCHARGE_RATE, DEFAULT_MAX_DISCHARGE_RATE),
                 battery_min_pct=current.get(CONF_BATTERY_MIN_PCT, DEFAULT_BATTERY_MIN_PCT),
                 battery_max_pct=current.get(CONF_BATTERY_MAX_PCT, DEFAULT_BATTERY_MAX_PCT),
-            ),
-        )
-
-    # ── Step 2: MQTT topics & scheduling ─────────────────────────────────────
-
-    async def async_step_mqtt_topics(
-        self, user_input: dict[str, Any] | None = None
-    ) -> ConfigFlowResult:
-        """Second step: all MQTT topics and price refresh interval."""
-        errors: dict[str, str] = {}
-
-        if user_input is not None:
-            parsed = _parse_mqtt_input(user_input)
-            if not parsed[CONF_MQTT_POWER_TOPIC]:
-                errors[CONF_MQTT_POWER_TOPIC] = "required"
-            if not parsed[CONF_MQTT_HISTORY_TOPIC]:
-                errors[CONF_MQTT_HISTORY_TOPIC] = "required"
-            if not parsed[CONF_MQTT_CHARGE_TOPIC]:
-                errors[CONF_MQTT_CHARGE_TOPIC] = "required"
-            if not parsed[CONF_MQTT_DISCHARGE_TOPIC]:
-                errors[CONF_MQTT_DISCHARGE_TOPIC] = "required"
-
-            if not errors:
-                self._options.update(parsed)
-                return self.async_create_entry(data=self._options)
-
-        current = self._merged()
-        return self.async_show_form(
-            step_id="mqtt_topics",
-            data_schema=_mqtt_schema(
                 power_topic=current.get(CONF_MQTT_POWER_TOPIC, ""),
                 history_topic=current.get(CONF_MQTT_HISTORY_TOPIC, ""),
                 charge_topic=current.get(CONF_MQTT_CHARGE_TOPIC, ""),

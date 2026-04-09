@@ -80,8 +80,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "Parametry UPS",
-        "description": "Zaktualizuj parametry akumulatora UPS. Zmiany zostaną zastosowane po zapisaniu.",
+        "title": "Ustawienia UPS i MQTT",
+        "description": "Zaktualizuj parametry UPS i tematy MQTT. Zmiany zostaną zastosowane po zapisaniu.",
         "data": {
           "ups_model": "Nazwa modelu UPS",
           "battery_capacity_kwh": "Całkowita pojemność baterii (kWh)",
@@ -89,22 +89,7 @@
           "max_charge_rate_kw": "Maksymalna moc ładowania (kW)",
           "max_discharge_rate_kw": "Maksymalna moc rozładowywania (kW)",
           "battery_min_pct": "Minimalny poziom baterii (%)",
-          "battery_max_pct": "Maksymalny poziom baterii (%)"
-        },
-        "data_description": {
-          "ups_model": "Opisowa nazwa UPS (np. 'SolarEdge 10kWh').",
-          "battery_capacity_kwh": "Łączna użyteczna pojemność akumulatorów we wszystkich szeregach.",
-          "num_strings": "Liczba równoległych szeregów akumulatorów w systemie.",
-          "max_charge_rate_kw": "Maksymalna moc, z jaką UPS może ładować akumulatory.",
-          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów.",
-          "battery_min_pct": "Nigdy nie rozładowuj baterii poniżej tego poziomu (rezerwa). Wysyłane do Claude jako ograniczenie.",
-          "battery_max_pct": "Nigdy nie ładuj baterii powyżej tego poziomu. Wysyłane do Claude jako ograniczenie."
-        }
-      },
-      "mqtt_topics": {
-        "title": "Tematy MQTT i harmonogramowanie",
-        "description": "Zaktualizuj tematy MQTT używane do monitorowania mocy, sterowania ładowaniem/rozładowywaniem UPS i opcjonalnego raportowania poziomu baterii.",
-        "data": {
+          "battery_max_pct": "Maksymalny poziom baterii (%)",
           "mqtt_power_topic": "Temat bieżącego poboru mocy (kW)",
           "mqtt_history_topic": "Temat historii zużycia (JSON)",
           "mqtt_charge_topic": "Temat sterowania ładowaniem UPS",
@@ -113,6 +98,13 @@
           "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
         },
         "data_description": {
+          "ups_model": "Opisowa nazwa UPS (np. 'SolarEdge 10kWh').",
+          "battery_capacity_kwh": "Łączna użyteczna pojemność akumulatorów we wszystkich szeregach.",
+          "num_strings": "Liczba równoległych szeregów akumulatorów w systemie.",
+          "max_charge_rate_kw": "Maksymalna moc, z jaką UPS może ładować akumulatory.",
+          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów.",
+          "battery_min_pct": "Nigdy nie rozładowuj baterii poniżej tego poziomu (rezerwa). Wysyłane do Claude jako ograniczenie.",
+          "battery_max_pct": "Nigdy nie ładuj baterii powyżej tego poziomu. Wysyłane do Claude jako ograniczenie.",
           "mqtt_power_topic": "Temat MQTT publikujący bieżący pobór mocy w kW. Obsługuje ładunek numeryczny lub JSON.",
           "mqtt_history_topic": "Temat MQTT publikujący historyczne zużycie kWh jako JSON ({\"daily\": {...}, \"hourly\": {...}}).",
           "mqtt_charge_topic": "Temat MQTT, do którego publikowane jest '1' (start ładowania) lub '0' (stop ładowania).",

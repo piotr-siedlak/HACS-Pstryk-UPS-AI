@@ -80,8 +80,8 @@
   "options": {
     "step": {
       "init": {
-        "title": "UPS Parameters",
-        "description": "Update your UPS battery parameters. Changes take effect after saving.",
+        "title": "UPS & MQTT Settings",
+        "description": "Update UPS parameters and MQTT topics. Changes take effect after saving.",
         "data": {
           "ups_model": "UPS Model Name",
           "battery_capacity_kwh": "Total Battery Capacity (kWh)",
@@ -89,22 +89,7 @@
           "max_charge_rate_kw": "Maximum Charge Rate (kW)",
           "max_discharge_rate_kw": "Maximum Discharge Rate (kW)",
           "battery_min_pct": "Minimum Battery Level (%)",
-          "battery_max_pct": "Maximum Battery Level (%)"
-        },
-        "data_description": {
-          "ups_model": "A descriptive name for your UPS (e.g. 'SolarEdge 10kWh').",
-          "battery_capacity_kwh": "Total usable battery capacity across all strings.",
-          "num_strings": "Number of parallel battery strings in your system.",
-          "max_charge_rate_kw": "Maximum power at which the UPS can charge the battery.",
-          "max_discharge_rate_kw": "Maximum power the UPS can supply from the battery.",
-          "battery_min_pct": "Never discharge the battery below this level (reserve). Sent to Claude for planning.",
-          "battery_max_pct": "Never charge the battery above this level. Sent to Claude for planning."
-        }
-      },
-      "mqtt_topics": {
-        "title": "MQTT Topics & Scheduling",
-        "description": "Update the MQTT topics used for power monitoring, UPS charge/discharge control, and optional battery level reporting.",
-        "data": {
+          "battery_max_pct": "Maximum Battery Level (%)",
           "mqtt_power_topic": "Real-time Power Topic (kW)",
           "mqtt_history_topic": "Historical Consumption Topic (JSON)",
           "mqtt_charge_topic": "UPS Charge Control Topic",
@@ -113,6 +98,13 @@
           "refresh_interval_hours": "Price Refresh Interval (hours)"
         },
         "data_description": {
+          "ups_model": "A descriptive name for your UPS (e.g. 'SolarEdge 10kWh').",
+          "battery_capacity_kwh": "Total usable battery capacity across all strings.",
+          "num_strings": "Number of parallel battery strings in your system.",
+          "max_charge_rate_kw": "Maximum power at which the UPS can charge the battery.",
+          "max_discharge_rate_kw": "Maximum power the UPS can supply from the battery.",
+          "battery_min_pct": "Never discharge the battery below this level (reserve). Sent to Claude for planning.",
+          "battery_max_pct": "Never charge the battery above this level. Sent to Claude for planning.",
           "mqtt_power_topic": "MQTT topic publishing current power draw in kW. Accepts plain numeric or JSON payload.",
           "mqtt_history_topic": "MQTT topic publishing historical kWh consumption as JSON ({\"daily\": {...}, \"hourly\": {...}}).",
           "mqtt_charge_topic": "MQTT topic to which '1' (start charging) or '0' (stop charging) is published.",
