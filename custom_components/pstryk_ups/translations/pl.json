@@ -21,30 +21,36 @@
           "battery_capacity_kwh": "Całkowita pojemność baterii (kWh)",
           "num_strings": "Liczba szeregów akumulatorów",
           "max_charge_rate_kw": "Maksymalna moc ładowania (kW)",
-          "max_discharge_rate_kw": "Maksymalna moc rozładowywania (kW)"
+          "max_discharge_rate_kw": "Maksymalna moc rozładowywania (kW)",
+          "battery_min_pct": "Minimalny poziom baterii (%)",
+          "battery_max_pct": "Maksymalny poziom baterii (%)"
         },
         "data_description": {
           "ups_model": "Opisowa nazwa UPS (np. 'SolarEdge 10kWh').",
           "battery_capacity_kwh": "Łączna użyteczna pojemność akumulatorów we wszystkich szeregach.",
           "num_strings": "Liczba równoległych szeregów akumulatorów w systemie.",
           "max_charge_rate_kw": "Maksymalna moc, z jaką UPS może ładować akumulatory.",
-          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów."
+          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów.",
+          "battery_min_pct": "Nigdy nie rozładowuj baterii poniżej tego poziomu (rezerwa). Wysyłane do Claude jako ograniczenie.",
+          "battery_max_pct": "Nigdy nie ładuj baterii powyżej tego poziomu. Wysyłane do Claude jako ograniczenie."
         }
       },
       "mqtt_schedule": {
         "title": "Tematy MQTT i harmonogramowanie",
-        "description": "Skonfiguruj tematy MQTT do monitorowania mocy i sterowania UPS oraz określ, jak często odświeżane są ceny energii.",
+        "description": "Skonfiguruj tematy MQTT do monitorowania mocy i sterowania ładowaniem/rozładowywaniem UPS.",
         "data": {
           "mqtt_power_topic": "Temat bieżącego poboru mocy (kW)",
           "mqtt_history_topic": "Temat historii zużycia (JSON)",
-          "mqtt_control_topic": "Temat sterowania ładowaniem UPS",
+          "mqtt_charge_topic": "Temat sterowania ładowaniem UPS",
+          "mqtt_discharge_topic": "Temat sterowania rozładowywaniem UPS",
           "mqtt_battery_topic": "Temat poziomu naładowania baterii (%, opcjonalnie)",
           "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
         },
         "data_description": {
           "mqtt_power_topic": "Temat MQTT publikujący bieżący pobór mocy w kW. Obsługuje ładunek numeryczny lub JSON.",
           "mqtt_history_topic": "Temat MQTT publikujący historyczne zużycie kWh jako JSON ({\"daily\": {...}, \"hourly\": {...}}).",
-          "mqtt_control_topic": "Temat MQTT, do którego publikowane jest 'ON' / 'OFF' w celu włączenia/wyłączenia ładowania UPS.",
+          "mqtt_charge_topic": "Temat MQTT, do którego publikowane jest '1' (start ładowania) lub '0' (stop ładowania).",
+          "mqtt_discharge_topic": "Temat MQTT, do którego publikowane jest '1' (start rozładowywania) lub '0' (stop rozładowywania).",
           "mqtt_battery_topic": "Opcjonalny temat MQTT publikujący poziom naładowania akumulatora w procentach.",
           "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk."
         }
@@ -81,30 +87,36 @@
           "battery_capacity_kwh": "Całkowita pojemność baterii (kWh)",
           "num_strings": "Liczba szeregów akumulatorów",
           "max_charge_rate_kw": "Maksymalna moc ładowania (kW)",
-          "max_discharge_rate_kw": "Maksymalna moc rozładowywania (kW)"
+          "max_discharge_rate_kw": "Maksymalna moc rozładowywania (kW)",
+          "battery_min_pct": "Minimalny poziom baterii (%)",
+          "battery_max_pct": "Maksymalny poziom baterii (%)"
         },
         "data_description": {
           "ups_model": "Opisowa nazwa UPS (np. 'SolarEdge 10kWh').",
           "battery_capacity_kwh": "Łączna użyteczna pojemność akumulatorów we wszystkich szeregach.",
           "num_strings": "Liczba równoległych szeregów akumulatorów w systemie.",
           "max_charge_rate_kw": "Maksymalna moc, z jaką UPS może ładować akumulatory.",
-          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów."
+          "max_discharge_rate_kw": "Maksymalna moc, jaką UPS może dostarczyć z akumulatorów.",
+          "battery_min_pct": "Nigdy nie rozładowuj baterii poniżej tego poziomu (rezerwa). Wysyłane do Claude jako ograniczenie.",
+          "battery_max_pct": "Nigdy nie ładuj baterii powyżej tego poziomu. Wysyłane do Claude jako ograniczenie."
         }
       },
       "mqtt_topics": {
         "title": "Tematy MQTT i harmonogramowanie",
-        "description": "Zaktualizuj tematy MQTT używane do monitorowania mocy, sterowania UPS i opcjonalnego raportowania poziomu baterii.",
+        "description": "Zaktualizuj tematy MQTT używane do monitorowania mocy, sterowania ładowaniem/rozładowywaniem UPS i opcjonalnego raportowania poziomu baterii.",
         "data": {
           "mqtt_power_topic": "Temat bieżącego poboru mocy (kW)",
           "mqtt_history_topic": "Temat historii zużycia (JSON)",
-          "mqtt_control_topic": "Temat sterowania ładowaniem UPS",
+          "mqtt_charge_topic": "Temat sterowania ładowaniem UPS",
+          "mqtt_discharge_topic": "Temat sterowania rozładowywaniem UPS",
           "mqtt_battery_topic": "Temat poziomu naładowania baterii (%, opcjonalnie)",
           "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
         },
         "data_description": {
           "mqtt_power_topic": "Temat MQTT publikujący bieżący pobór mocy w kW. Obsługuje ładunek numeryczny lub JSON.",
           "mqtt_history_topic": "Temat MQTT publikujący historyczne zużycie kWh jako JSON ({\"daily\": {...}, \"hourly\": {...}}).",
-          "mqtt_control_topic": "Temat MQTT, do którego publikowane jest 'ON' / 'OFF' w celu włączenia/wyłączenia ładowania UPS.",
+          "mqtt_charge_topic": "Temat MQTT, do którego publikowane jest '1' (start ładowania) lub '0' (stop ładowania).",
+          "mqtt_discharge_topic": "Temat MQTT, do którego publikowane jest '1' (start rozładowywania) lub '0' (stop rozładowywania).",
           "mqtt_battery_topic": "Opcjonalny temat MQTT publikujący poziom naładowania akumulatora w procentach.",
           "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk."
         }
@@ -150,6 +162,9 @@
     "switch": {
       "charging": {
         "name": "Ładowanie UPS"
+      },
+      "discharging": {
+        "name": "Rozładowywanie UPS"
       },
       "auto_schedule": {
         "name": "Automatyczny harmonogram"

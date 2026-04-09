@@ -20,21 +20,26 @@ from .const import (
     ACTION_DISCHARGE,
     ACTION_IDLE,
     CONF_BATTERY_CAPACITY,
+    CONF_BATTERY_MAX_PCT,
+    CONF_BATTERY_MIN_PCT,
     CONF_CLAUDE_API_KEY,
     CONF_MAX_CHARGE_RATE,
     CONF_MAX_DISCHARGE_RATE,
     CONF_MQTT_BATTERY_TOPIC,
-    CONF_MQTT_CONTROL_TOPIC,
+    CONF_MQTT_CHARGE_TOPIC,
+    CONF_MQTT_DISCHARGE_TOPIC,
     CONF_MQTT_HISTORY_TOPIC,
     CONF_MQTT_POWER_TOPIC,
     CONF_NUM_STRINGS,
     CONF_PSTRYK_API_KEY,
     CONF_REFRESH_INTERVAL,
     CONF_UPS_MODEL,
-    DEFAULT_MQTT_CONTROL_PAYLOAD_OFF,
-    DEFAULT_MQTT_CONTROL_PAYLOAD_ON,
+    DEFAULT_BATTERY_MAX_PCT,
+    DEFAULT_BATTERY_MIN_PCT,
     DEFAULT_REFRESH_INTERVAL,
     DOMAIN,
+    MQTT_PAYLOAD_OFF,
+    MQTT_PAYLOAD_ON,
     NEXT_DAY_PRICES_HOUR,
     UPDATE_INTERVAL_HOURS,
     WARSAW_TZ_NAME,
@@ -79,6 +84,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.battery_level_pct: float = 50.0
         self.power_history: dict[str, Any] = {"daily": {}, "hourly": {}}
         self.charging_enabled: bool = False
+        self.discharging_enabled: bool = False
         self.auto_schedule_enabled: bool = True
         self.last_price_refresh: datetime | None = None
 
@@ -109,6 +115,8 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "num_strings": self.config.get(CONF_NUM_STRINGS, 1),
             "max_charge_rate_kw": self.config.get(CONF_MAX_CHARGE_RATE, 2.0),
             "max_discharge_rate_kw": self.config.get(CONF_MAX_DISCHARGE_RATE, 2.0),
+            "battery_min_pct": self.config.get(CONF_BATTERY_MIN_PCT, DEFAULT_BATTERY_MIN_PCT),
+            "battery_max_pct": self.config.get(CONF_BATTERY_MAX_PCT, DEFAULT_BATTERY_MAX_PCT),
         }
         self._planner = ClaudePlanner(
             api_key=self.config[CONF_CLAUDE_API_KEY],
@@ -314,22 +322,31 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("Unexpected error generating schedule: %s", exc, exc_info=True)
 
     def _apply_current_hour_schedule(self) -> None:
-        """Set charging_enabled based on the current hour's scheduled action."""
+        """Set charging/discharging state based on the current hour's scheduled action."""
         now = datetime.now(timezone.utc)
         current_hour_key = now.strftime("%Y-%m-%dT%H:00:00Z")
         for item in self.schedule:
             hour_key = item.get("hour", "")
-            # Match on just the date+hour prefix for timezone-flexible comparison
             if hour_key[:13] == current_hour_key[:13]:
-                should_charge = item["action"] == ACTION_CHARGE
+                action = item.get("action", ACTION_IDLE)
+                should_charge = action == ACTION_CHARGE
+                should_discharge = action == ACTION_DISCHARGE
+
                 if should_charge != self.charging_enabled:
                     _LOGGER.info(
-                        "Auto-schedule: setting charging=%s for hour %s (action=%s, price=%.4f PLN/kWh)",
-                        should_charge, hour_key, item["action"], item.get("price_pln_kwh", 0),
+                        "Auto-schedule: charging=%s for hour %s (action=%s, price=%.4f PLN/kWh)",
+                        should_charge, hour_key, action, item.get("price_pln_kwh", 0),
                     )
                     self.charging_enabled = should_charge
-                    # Fire-and-forget the MQTT publish (we're in a sync callback)
                     self.hass.async_create_task(self._publish_charge_command(should_charge))
+
+                if should_discharge != self.discharging_enabled:
+                    _LOGGER.info(
+                        "Auto-schedule: discharging=%s for hour %s (action=%s, price=%.4f PLN/kWh)",
+                        should_discharge, hour_key, action, item.get("price_pln_kwh", 0),
+                    )
+                    self.discharging_enabled = should_discharge
+                    self.hass.async_create_task(self._publish_discharge_command(should_discharge))
                 break
 
     def _update_savings_estimate(self) -> None:
@@ -373,6 +390,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "current_power_kw": self.current_power_kw,
             "battery_level_pct": self.battery_level_pct,
             "charging_enabled": self.charging_enabled,
+            "discharging_enabled": self.discharging_enabled,
             "auto_schedule_enabled": self.auto_schedule_enabled,
             "next_charge_window": next_charge,
             "next_discharge_window": next_discharge,
@@ -424,9 +442,15 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     # ── Public control methods ──────────────────────────────────────────────
 
     async def set_charging(self, enabled: bool) -> None:
-        """Enable or disable UPS charging and publish to MQTT control topic."""
+        """Enable or disable UPS charging and publish to MQTT charge topic."""
         self.charging_enabled = enabled
         await self._publish_charge_command(enabled)
+        self.async_update_listeners()
+
+    async def set_discharging(self, enabled: bool) -> None:
+        """Enable or disable UPS discharging and publish to MQTT discharge topic."""
+        self.discharging_enabled = enabled
+        await self._publish_discharge_command(enabled)
         self.async_update_listeners()
 
     async def set_auto_schedule(self, enabled: bool) -> None:
@@ -434,28 +458,31 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.auto_schedule_enabled = enabled
         _LOGGER.info("Auto-schedule %s", "enabled" if enabled else "disabled")
         if enabled:
-            # Immediately apply the current hour's schedule
             self._apply_current_hour_schedule()
         self.async_update_listeners()
 
     async def _publish_charge_command(self, enabled: bool) -> None:
-        """Publish ON or OFF to the configured MQTT control topic."""
-        control_topic: str = self.config.get(CONF_MQTT_CONTROL_TOPIC, "")
-        if not control_topic:
-            _LOGGER.debug("No MQTT control topic configured; skipping publish")
+        """Publish 1 (on) or 0 (off) to the configured MQTT charge topic."""
+        topic: str = self.config.get(CONF_MQTT_CHARGE_TOPIC, "")
+        if not topic:
+            _LOGGER.debug("No MQTT charge topic configured; skipping publish")
             return
-        payload = (
-            DEFAULT_MQTT_CONTROL_PAYLOAD_ON if enabled
-            else DEFAULT_MQTT_CONTROL_PAYLOAD_OFF
-        )
+        payload = MQTT_PAYLOAD_ON if enabled else MQTT_PAYLOAD_OFF
         try:
-            await mqtt.async_publish(
-                self.hass,
-                control_topic,
-                payload,
-                qos=1,
-                retain=True,
-            )
-            _LOGGER.debug("Published '%s' to %s", payload, control_topic)
+            await mqtt.async_publish(self.hass, topic, payload, qos=1, retain=True)
+            _LOGGER.debug("Charge command: published '%s' to %s", payload, topic)
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Failed to publish charge command: %s", exc)
+
+    async def _publish_discharge_command(self, enabled: bool) -> None:
+        """Publish 1 (on) or 0 (off) to the configured MQTT discharge topic."""
+        topic: str = self.config.get(CONF_MQTT_DISCHARGE_TOPIC, "")
+        if not topic:
+            _LOGGER.debug("No MQTT discharge topic configured; skipping publish")
+            return
+        payload = MQTT_PAYLOAD_ON if enabled else MQTT_PAYLOAD_OFF
+        try:
+            await mqtt.async_publish(self.hass, topic, payload, qos=1, retain=True)
+            _LOGGER.debug("Discharge command: published '%s' to %s", payload, topic)
+        except Exception as exc:  # noqa: BLE001
+            _LOGGER.error("Failed to publish discharge command: %s", exc)

@@ -16,9 +16,12 @@ CONF_BATTERY_CAPACITY = "battery_capacity_kwh"
 CONF_NUM_STRINGS = "num_strings"
 CONF_MAX_CHARGE_RATE = "max_charge_rate_kw"
 CONF_MAX_DISCHARGE_RATE = "max_discharge_rate_kw"
+CONF_BATTERY_MIN_PCT = "battery_min_pct"
+CONF_BATTERY_MAX_PCT = "battery_max_pct"
 CONF_MQTT_POWER_TOPIC = "mqtt_power_topic"
 CONF_MQTT_HISTORY_TOPIC = "mqtt_history_topic"
-CONF_MQTT_CONTROL_TOPIC = "mqtt_control_topic"
+CONF_MQTT_CHARGE_TOPIC = "mqtt_charge_topic"
+CONF_MQTT_DISCHARGE_TOPIC = "mqtt_discharge_topic"
 CONF_MQTT_BATTERY_TOPIC = "mqtt_battery_topic"
 CONF_REFRESH_INTERVAL = "refresh_interval_hours"
 
@@ -29,8 +32,11 @@ DEFAULT_NUM_STRINGS = 1
 DEFAULT_MAX_CHARGE_RATE = 2.0         # kW
 DEFAULT_MAX_DISCHARGE_RATE = 2.0      # kW
 DEFAULT_UPS_MODEL = "Generic UPS"
-DEFAULT_MQTT_CONTROL_PAYLOAD_ON = "ON"
-DEFAULT_MQTT_CONTROL_PAYLOAD_OFF = "OFF"
+DEFAULT_BATTERY_MIN_PCT = 10.0        # never discharge below this level
+DEFAULT_BATTERY_MAX_PCT = 90.0        # never charge above this level
+# MQTT charge/discharge control payloads (1 = on, 0 = off)
+MQTT_PAYLOAD_ON = "1"
+MQTT_PAYLOAD_OFF = "0"
 
 # ── Pstryk API ───────────────────────────────────────────────────────────────
 PSTRYK_API_BASE_URL = "https://api.pstryk.pl"
@@ -69,6 +75,7 @@ SENSOR_NEXT_DISCHARGE = "next_discharge_window"
 SENSOR_BATTERY_LEVEL = "battery_level"
 SENSOR_DAILY_SAVINGS = "daily_savings"
 SWITCH_CHARGING = "charging"
+SWITCH_DISCHARGING = "discharging"
 SWITCH_AUTO_SCHEDULE = "auto_schedule"
 
 # ── DataUpdateCoordinator poll interval ───────────────────────────────────────
@@ -79,4 +86,3 @@ UPDATE_INTERVAL_HOURS = 1
 # ── Heuristic fallback config ─────────────────────────────────────────────────
 HEURISTIC_CHARGE_HOURS = 8            # cheapest N hours → charge
 HEURISTIC_DISCHARGE_HOURS = 4         # most expensive N hours → discharge
-MIN_BATTERY_RESERVE_PCT = 10.0        # never discharge below this level

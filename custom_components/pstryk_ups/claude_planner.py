@@ -15,9 +15,10 @@ from .const import (
     ACTION_IDLE,
     CLAUDE_MAX_TOKENS,
     CLAUDE_MODEL,
+    DEFAULT_BATTERY_MAX_PCT,
+    DEFAULT_BATTERY_MIN_PCT,
     HEURISTIC_CHARGE_HOURS,
     HEURISTIC_DISCHARGE_HOURS,
-    MIN_BATTERY_RESERVE_PCT,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -115,6 +116,8 @@ class ClaudePlanner:
         max_discharge: float = cfg.get("max_discharge_rate_kw", 2.0)
         num_strings: int = cfg.get("num_strings", 1)
         ups_model: str = cfg.get("ups_model", "Generic UPS")
+        battery_min_pct: float = cfg.get("battery_min_pct", DEFAULT_BATTERY_MIN_PCT)
+        battery_max_pct: float = cfg.get("battery_max_pct", DEFAULT_BATTERY_MAX_PCT)
 
         # Limit price table to next 48 h for prompt size
         price_table = "\n".join(
@@ -134,7 +137,8 @@ class ClaudePlanner:
 - Maximum charge rate: {max_charge} kW
 - Maximum discharge rate: {max_discharge} kW
 - Current battery level: {current_battery_pct:.1f}%
-- Minimum battery reserve: {MIN_BATTERY_RESERVE_PCT}%
+- Minimum battery reserve (never discharge below): {battery_min_pct:.1f}%
+- Maximum charge level (never charge above): {battery_max_pct:.1f}%
 
 ## Electricity Price Forecast (PLN/kWh, hourly, UTC timestamps)
 {price_table}
@@ -151,11 +155,12 @@ Generate an optimised UPS charge/discharge schedule for the next 24 hours starti
 Optimisation rules:
 1. CHARGE during the cheapest hours (below the 24-h average price ideally).
 2. DISCHARGE during the most expensive hours (above average + margin).
-3. Never let the battery drop below {MIN_BATTERY_RESERVE_PCT}%.
-4. Respect maximum charge/discharge rates.
-5. Consider typical household consumption to avoid over-discharging.
-6. If the price spread is too small (<15% between cheap and expensive), prefer IDLE.
-7. Account for charging/discharging efficiency (~90%).
+3. Never let the battery drop below {battery_min_pct:.1f}% (minimum reserve).
+4. Never charge the battery above {battery_max_pct:.1f}% (maximum charge level).
+5. Respect maximum charge/discharge rates.
+6. Consider typical household consumption to avoid over-discharging.
+7. If the price spread is too small (<15% between cheap and expensive), prefer IDLE.
+8. Account for charging/discharging efficiency (~90%).
 
 Return ONLY a valid JSON array — no prose, no markdown, no code fences — with exactly one object per hour for the next 24 hours:
 
@@ -174,7 +179,7 @@ Return ONLY a valid JSON array — no prose, no markdown, no code fences — wit
 Constraints on the JSON:
 - "action" must be exactly one of: "charge", "discharge", "idle"
 - "power_kw" is positive for charging, negative for discharging, 0 for idle
-- "battery_level_pct" must stay within [0, 100] and never below {MIN_BATTERY_RESERVE_PCT}
+- "battery_level_pct" must stay within [{battery_min_pct:.1f}, {battery_max_pct:.1f}]
 - Include all 24 hours; if no action is optimal, use "idle"
 """
 
@@ -243,6 +248,8 @@ Constraints on the JSON:
         capacity_kwh: float = self._ups_config.get("battery_capacity_kwh", 10.0)
         max_charge: float = self._ups_config.get("max_charge_rate_kw", 2.0)
         max_discharge: float = self._ups_config.get("max_discharge_rate_kw", 2.0)
+        battery_min_pct: float = self._ups_config.get("battery_min_pct", DEFAULT_BATTERY_MIN_PCT)
+        battery_max_pct: float = self._ups_config.get("battery_max_pct", DEFAULT_BATTERY_MAX_PCT)
 
         # Build a price lookup for the next 24 h
         price_by_hour: dict[str, float] = {}
@@ -284,17 +291,17 @@ Constraints on the JSON:
         schedule: list[dict[str, Any]] = []
 
         for hour, price in prices_for_hours:
-            if hour in charge_hours and battery_pct < 95.0:
+            if hour in charge_hours and battery_pct < battery_max_pct:
                 action = ACTION_CHARGE
                 power_kw = max_charge
                 delta_pct = (power_kw / capacity_kwh) * 100.0
-                battery_pct = min(100.0, battery_pct + delta_pct)
+                battery_pct = min(battery_max_pct, battery_pct + delta_pct)
                 reason = "Heuristic: low-price charging window"
-            elif hour in discharge_hours and battery_pct > MIN_BATTERY_RESERVE_PCT:
+            elif hour in discharge_hours and battery_pct > battery_min_pct:
                 action = ACTION_DISCHARGE
                 power_kw = -max_discharge
                 delta_pct = (max_discharge / capacity_kwh) * 100.0
-                battery_pct = max(MIN_BATTERY_RESERVE_PCT, battery_pct - delta_pct)
+                battery_pct = max(battery_min_pct, battery_pct - delta_pct)
                 reason = "Heuristic: high-price discharge window"
             else:
                 action = ACTION_IDLE

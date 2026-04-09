@@ -12,7 +12,8 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
-    CONF_MQTT_CONTROL_TOPIC,
+    CONF_MQTT_CHARGE_TOPIC,
+    CONF_MQTT_DISCHARGE_TOPIC,
     CONF_UPS_MODEL,
     DATA_COORDINATOR,
     DEFAULT_UPS_MODEL,
@@ -20,6 +21,7 @@ from .const import (
     MANUFACTURER,
     SWITCH_AUTO_SCHEDULE,
     SWITCH_CHARGING,
+    SWITCH_DISCHARGING,
     VERSION,
 )
 from .coordinator import PstrykUPSCoordinator
@@ -38,6 +40,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             ChargingSwitch(coordinator, entry),
+            DischargeSwitch(coordinator, entry),
             AutoScheduleSwitch(coordinator, entry),
         ]
     )
@@ -89,7 +92,7 @@ class ChargingSwitch(PstrykUPSSwitch):
 
     def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
         super().__init__(coordinator, entry, SWITCH_CHARGING)
-        self._control_topic: str = entry.data.get(CONF_MQTT_CONTROL_TOPIC, "")
+        self._control_topic: str = entry.data.get(CONF_MQTT_CHARGE_TOPIC, "")
 
     @property
     def is_on(self) -> bool:
@@ -117,6 +120,49 @@ class ChargingSwitch(PstrykUPSSwitch):
         """Disable UPS charging and publish MQTT command."""
         _LOGGER.info("User disabled UPS charging")
         await self.coordinator.set_charging(False)
+
+
+class DischargeSwitch(PstrykUPSSwitch):
+    """Toggle UPS battery discharging on/off.
+
+    Publishes 1 (enable) or 0 (disable) to the configured MQTT discharge topic.
+    When Auto-schedule is active the switch reflects the schedule.
+    The user can override it at any time.
+    """
+
+    _attr_translation_key = "discharging"
+    _attr_device_class = SwitchDeviceClass.SWITCH
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SWITCH_DISCHARGING)
+        self._discharge_topic: str = entry.data.get(CONF_MQTT_DISCHARGE_TOPIC, "")
+
+    @property
+    def is_on(self) -> bool:
+        return self._coordinator_data.get("discharging_enabled", False)
+
+    @property
+    def icon(self) -> str:
+        return "mdi:battery-arrow-down" if self.is_on else "mdi:battery-minus"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._coordinator_data
+        return {
+            "auto_schedule_active": data.get("auto_schedule_enabled", True),
+            "current_schedule_action": data.get("current_action", "idle"),
+            "discharge_topic": self._discharge_topic,
+        }
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Enable UPS discharging."""
+        _LOGGER.info("User enabled UPS discharging")
+        await self.coordinator.set_discharging(True)
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Disable UPS discharging."""
+        _LOGGER.info("User disabled UPS discharging")
+        await self.coordinator.set_discharging(False)
 
 
 class AutoScheduleSwitch(PstrykUPSSwitch):

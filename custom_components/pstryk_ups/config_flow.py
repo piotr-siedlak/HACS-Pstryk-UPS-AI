@@ -22,11 +22,14 @@ from homeassistant.helpers.selector import (
 from .claude_planner import ClaudePlanner
 from .const import (
     CONF_BATTERY_CAPACITY,
+    CONF_BATTERY_MAX_PCT,
+    CONF_BATTERY_MIN_PCT,
     CONF_CLAUDE_API_KEY,
     CONF_MAX_CHARGE_RATE,
     CONF_MAX_DISCHARGE_RATE,
     CONF_MQTT_BATTERY_TOPIC,
-    CONF_MQTT_CONTROL_TOPIC,
+    CONF_MQTT_CHARGE_TOPIC,
+    CONF_MQTT_DISCHARGE_TOPIC,
     CONF_MQTT_HISTORY_TOPIC,
     CONF_MQTT_POWER_TOPIC,
     CONF_NUM_STRINGS,
@@ -34,6 +37,8 @@ from .const import (
     CONF_REFRESH_INTERVAL,
     CONF_UPS_MODEL,
     DEFAULT_BATTERY_CAPACITY,
+    DEFAULT_BATTERY_MAX_PCT,
+    DEFAULT_BATTERY_MIN_PCT,
     DEFAULT_MAX_CHARGE_RATE,
     DEFAULT_MAX_DISCHARGE_RATE,
     DEFAULT_NUM_STRINGS,
@@ -71,6 +76,8 @@ def _ups_schema(
     num_strings: int = DEFAULT_NUM_STRINGS,
     max_charge_rate: float = DEFAULT_MAX_CHARGE_RATE,
     max_discharge_rate: float = DEFAULT_MAX_DISCHARGE_RATE,
+    battery_min_pct: float = DEFAULT_BATTERY_MIN_PCT,
+    battery_max_pct: float = DEFAULT_BATTERY_MAX_PCT,
 ) -> vol.Schema:
     return vol.Schema(
         {
@@ -87,6 +94,12 @@ def _ups_schema(
             vol.Required(CONF_MAX_DISCHARGE_RATE, default=max_discharge_rate): NumberSelector(
                 NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
             ),
+            vol.Required(CONF_BATTERY_MIN_PCT, default=battery_min_pct): NumberSelector(
+                NumberSelectorConfig(min=0.0, max=50.0, step=1.0, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_BATTERY_MAX_PCT, default=battery_max_pct): NumberSelector(
+                NumberSelectorConfig(min=50.0, max=100.0, step=1.0, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
+            ),
         }
     )
 
@@ -94,7 +107,8 @@ def _ups_schema(
 def _mqtt_schema(
     power_topic: str = "",
     history_topic: str = "",
-    control_topic: str = "",
+    charge_topic: str = "",
+    discharge_topic: str = "",
     battery_topic: str = "",
     refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
 ) -> vol.Schema:
@@ -102,7 +116,8 @@ def _mqtt_schema(
         {
             vol.Required(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
             vol.Required(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
-            vol.Required(CONF_MQTT_CONTROL_TOPIC, default=control_topic): str,
+            vol.Required(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
+            vol.Required(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
             vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
@@ -148,6 +163,8 @@ def _parse_ups_input(user_input: dict[str, Any]) -> dict[str, Any]:
         CONF_NUM_STRINGS: int(user_input[CONF_NUM_STRINGS]),
         CONF_MAX_CHARGE_RATE: float(user_input[CONF_MAX_CHARGE_RATE]),
         CONF_MAX_DISCHARGE_RATE: float(user_input[CONF_MAX_DISCHARGE_RATE]),
+        CONF_BATTERY_MIN_PCT: float(user_input[CONF_BATTERY_MIN_PCT]),
+        CONF_BATTERY_MAX_PCT: float(user_input[CONF_BATTERY_MAX_PCT]),
     }
 
 
@@ -155,7 +172,8 @@ def _parse_mqtt_input(user_input: dict[str, Any]) -> dict[str, Any]:
     return {
         CONF_MQTT_POWER_TOPIC: user_input[CONF_MQTT_POWER_TOPIC].strip(),
         CONF_MQTT_HISTORY_TOPIC: user_input[CONF_MQTT_HISTORY_TOPIC].strip(),
-        CONF_MQTT_CONTROL_TOPIC: user_input[CONF_MQTT_CONTROL_TOPIC].strip(),
+        CONF_MQTT_CHARGE_TOPIC: user_input[CONF_MQTT_CHARGE_TOPIC].strip(),
+        CONF_MQTT_DISCHARGE_TOPIC: user_input[CONF_MQTT_DISCHARGE_TOPIC].strip(),
         CONF_MQTT_BATTERY_TOPIC: user_input.get(CONF_MQTT_BATTERY_TOPIC, "").strip(),
         CONF_REFRESH_INTERVAL: int(user_input[CONF_REFRESH_INTERVAL]),
     }
@@ -248,7 +266,12 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="mqtt_schedule",
-            data_schema=_mqtt_schema(),
+            data_schema=_mqtt_schema(
+                power_topic=self._data.get(CONF_MQTT_POWER_TOPIC, ""),
+                history_topic=self._data.get(CONF_MQTT_HISTORY_TOPIC, ""),
+                charge_topic=self._data.get(CONF_MQTT_CHARGE_TOPIC, ""),
+                discharge_topic=self._data.get(CONF_MQTT_DISCHARGE_TOPIC, ""),
+            ),
             errors=errors,
         )
 
@@ -335,6 +358,8 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
                 num_strings=current.get(CONF_NUM_STRINGS, DEFAULT_NUM_STRINGS),
                 max_charge_rate=current.get(CONF_MAX_CHARGE_RATE, DEFAULT_MAX_CHARGE_RATE),
                 max_discharge_rate=current.get(CONF_MAX_DISCHARGE_RATE, DEFAULT_MAX_DISCHARGE_RATE),
+                battery_min_pct=current.get(CONF_BATTERY_MIN_PCT, DEFAULT_BATTERY_MIN_PCT),
+                battery_max_pct=current.get(CONF_BATTERY_MAX_PCT, DEFAULT_BATTERY_MAX_PCT),
             ),
         )
 
@@ -352,8 +377,10 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
                 errors[CONF_MQTT_POWER_TOPIC] = "required"
             if not parsed[CONF_MQTT_HISTORY_TOPIC]:
                 errors[CONF_MQTT_HISTORY_TOPIC] = "required"
-            if not parsed[CONF_MQTT_CONTROL_TOPIC]:
-                errors[CONF_MQTT_CONTROL_TOPIC] = "required"
+            if not parsed[CONF_MQTT_CHARGE_TOPIC]:
+                errors[CONF_MQTT_CHARGE_TOPIC] = "required"
+            if not parsed[CONF_MQTT_DISCHARGE_TOPIC]:
+                errors[CONF_MQTT_DISCHARGE_TOPIC] = "required"
 
             if not errors:
                 self._options.update(parsed)
@@ -365,7 +392,8 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
             data_schema=_mqtt_schema(
                 power_topic=current.get(CONF_MQTT_POWER_TOPIC, ""),
                 history_topic=current.get(CONF_MQTT_HISTORY_TOPIC, ""),
-                control_topic=current.get(CONF_MQTT_CONTROL_TOPIC, ""),
+                charge_topic=current.get(CONF_MQTT_CHARGE_TOPIC, ""),
+                discharge_topic=current.get(CONF_MQTT_DISCHARGE_TOPIC, ""),
                 battery_topic=current.get(CONF_MQTT_BATTERY_TOPIC, ""),
                 refresh_interval=current.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
             ),
