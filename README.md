@@ -13,9 +13,9 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 - **MQTT integration** — subscribes to configurable topics for:
   - Real-time household power draw (kW)
   - Historical consumption data (kWh/day, kWh/hour)
-  - Optional UPS battery state of charge (%)
+  - UPS battery state of charge (%)
   - Publishes `1`/`0` commands to separate UPS charge and discharge control topics
-- **7 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate
+- **9 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk and Claude API status
 - **3 switch entities** — manual charging toggle, manual discharging toggle, and auto-schedule enable/disable
 - **Full config flow** — all settings configurable via the Home Assistant UI (no YAML required)
 - **Options flow** — update UPS parameters and MQTT topics at any time via the **Configure** button without removing the integration
@@ -139,7 +139,7 @@ Or JSON:
 }
 ```
 
-### Battery level topic (subscribe, optional)
+### Battery level topic (subscribe)
 
 Plain numeric:
 ```
@@ -180,6 +180,8 @@ The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — 
 | `sensor.pstryk_ups_next_discharge_window` | Next planned discharge start | timestamp |
 | `sensor.pstryk_ups_battery_level` | Battery state of charge | % |
 | `sensor.pstryk_ups_estimated_daily_savings` | Estimated PLN saved today | PLN |
+| `sensor.pstryk_ups_pstryk_api_status` | Pstryk API connection status | ok/error/unknown |
+| `sensor.pstryk_ups_claude_api_status` | Claude AI API status & schedule source | ok/error/unknown |
 
 ### Switches
 
@@ -257,7 +259,7 @@ content: >
 | "Invalid Claude API key" | Verify the key at console.anthropic.com; check usage limits |
 | No MQTT data arriving | Ensure the MQTT broker is running and topics are publishing |
 | Schedule shows all "idle" | Claude returned an empty schedule; check HA logs for Claude errors |
-| Battery level stuck at 50% | Configure the optional battery MQTT topic or publish level data |
+| Battery level stuck at 50% | Verify your device is publishing to the battery MQTT topic |
 | UPS not charging/discharging | Verify your device subscribes to the correct MQTT topics and responds to `1`/`0` payloads |
 
 Enable debug logging for detailed diagnostics:

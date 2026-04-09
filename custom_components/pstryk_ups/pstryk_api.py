@@ -63,9 +63,10 @@ class PstrykAuthError(PstrykAPIError):
 class PstrykAPIClient:
     """Thin async wrapper around the Pstryk unified-metrics pricing endpoint."""
 
-    # Field aliases tried in order when extracting price values from a frame
+    # Field aliases tried in order when extracting price values from a frame.
+    # total_cost is the full price the customer pays (energy + distribution + fees + taxes).
     _PRICE_NET_FIELDS = (
-        "fix_price", "net_price", "price", "tge_price", "energy_price", "value"
+        "total_cost", "fix_price", "net_price", "price", "tge_price", "energy_price", "value"
     )
     _PRICE_GROSS_FIELDS = (
         "gross_price", "price_with_vat", "price_gross", "gross"
