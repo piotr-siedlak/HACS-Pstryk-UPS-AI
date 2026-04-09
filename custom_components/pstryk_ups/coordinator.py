@@ -227,7 +227,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.current_power_kw = float(payload)
             self.mqtt_last_power_update = datetime.now(timezone.utc)
             _LOGGER.debug("Power draw updated: %.3f kW", self.current_power_kw)
-            self.async_update_listeners()
+            self.async_set_updated_data(self._build_state_snapshot())
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             _LOGGER.warning("Could not parse power MQTT payload %r: %s", payload, exc)
 
@@ -251,7 +251,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.debug("Power history updated (%d daily, %d hourly entries)",
                           len(self.power_history.get("daily", {})),
                           len(self.power_history.get("hourly", {})))
-            self.async_update_listeners()
+            self.async_set_updated_data(self._build_state_snapshot())
         except (json.JSONDecodeError, TypeError) as exc:
             _LOGGER.warning("Could not parse history MQTT payload: %s", exc)
 
@@ -278,7 +278,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.battery_level_pct = float(payload)
             self.mqtt_last_battery_update = datetime.now(timezone.utc)
             _LOGGER.debug("Battery level updated: %.1f%%", self.battery_level_pct)
-            self.async_update_listeners()
+            self.async_set_updated_data(self._build_state_snapshot())
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
             _LOGGER.warning("Could not parse battery MQTT payload %r: %s", payload, exc)
 
