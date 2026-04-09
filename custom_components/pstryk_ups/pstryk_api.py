@@ -306,16 +306,21 @@ class PstrykAPIClient:
             # API may not expose a separate gross field; fall back to net
             price_gross = price_net
 
+        is_cheap: bool = bool(pricing_src.get("is_cheap", False))
+        is_expensive: bool = bool(pricing_src.get("is_expensive", False))
+
         _LOGGER.debug(
-            "Frame %s: price=%.4f (field=%r), price_gross=%.4f (field=%r) | available keys: %s",
+            "Frame %s: price=%.4f (field=%r), price_gross=%.4f (field=%r) cheap=%s expensive=%s | keys: %s",
             ts_raw[:16], price_net, net_field, price_gross, gross_field,
-            list(pricing_src.keys()),
+            is_cheap, is_expensive, list(pricing_src.keys()),
         )
 
         return {
             "timestamp": ts_raw,
             "price": price_net,
             "price_gross": price_gross,
+            "is_cheap": is_cheap,
+            "is_expensive": is_expensive,
         }
 
     @staticmethod

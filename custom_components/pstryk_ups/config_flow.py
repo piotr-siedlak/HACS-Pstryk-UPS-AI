@@ -25,6 +25,7 @@ from .const import (
     CONF_BATTERY_MAX_PCT,
     CONF_BATTERY_MIN_PCT,
     CONF_CLAUDE_API_KEY,
+    CONF_CLAUDE_PROMPT,
     CONF_MAX_CHARGE_RATE,
     CONF_MAX_DISCHARGE_RATE,
     CONF_MQTT_BATTERY_TOPIC,
@@ -39,6 +40,7 @@ from .const import (
     DEFAULT_BATTERY_CAPACITY,
     DEFAULT_BATTERY_MAX_PCT,
     DEFAULT_BATTERY_MIN_PCT,
+    DEFAULT_CLAUDE_PROMPT,
     DEFAULT_MAX_CHARGE_RATE,
     DEFAULT_MAX_DISCHARGE_RATE,
     DEFAULT_NUM_STRINGS,
@@ -339,6 +341,7 @@ def _options_schema(
     discharge_topic: str = "",
     battery_topic: str = "",
     refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+    claude_prompt: str = DEFAULT_CLAUDE_PROMPT,
 ) -> vol.Schema:
     """Combined schema for the single-page options flow."""
     return vol.Schema(
@@ -372,6 +375,10 @@ def _options_schema(
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
             ),
+            # ── Claude prompt ────────────────────────────────────────────────
+            vol.Required(CONF_CLAUDE_PROMPT, default=claude_prompt): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.TEXT, multiline=True)
+            ),
         }
     )
 
@@ -396,6 +403,7 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
         if user_input is not None:
             ups = _parse_ups_input(user_input)
             mqtt = _parse_mqtt_input(user_input)
+            claude_prompt = user_input.get(CONF_CLAUDE_PROMPT, DEFAULT_CLAUDE_PROMPT)
 
             if not mqtt[CONF_MQTT_POWER_TOPIC]:
                 errors[CONF_MQTT_POWER_TOPIC] = "required"
@@ -409,7 +417,9 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
                 errors[CONF_MQTT_BATTERY_TOPIC] = "required"
 
             if not errors:
-                return self.async_create_entry(data={**ups, **mqtt})
+                return self.async_create_entry(
+                    data={**ups, **mqtt, CONF_CLAUDE_PROMPT: claude_prompt}
+                )
 
         current = self._merged()
         return self.async_show_form(
@@ -428,6 +438,7 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
                 discharge_topic=current.get(CONF_MQTT_DISCHARGE_TOPIC, ""),
                 battery_topic=current.get(CONF_MQTT_BATTERY_TOPIC, ""),
                 refresh_interval=current.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
+                claude_prompt=current.get(CONF_CLAUDE_PROMPT, DEFAULT_CLAUDE_PROMPT),
             ),
             errors=errors,
         )

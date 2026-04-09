@@ -23,6 +23,7 @@ from .const import (
     CONF_BATTERY_MAX_PCT,
     CONF_BATTERY_MIN_PCT,
     CONF_CLAUDE_API_KEY,
+    CONF_CLAUDE_PROMPT,
     CONF_MAX_CHARGE_RATE,
     CONF_MAX_DISCHARGE_RATE,
     CONF_MQTT_BATTERY_TOPIC,
@@ -326,12 +327,14 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def _refresh_schedule(self) -> None:
         """Call Claude (or heuristic fallback) to regenerate the schedule."""
+        custom_prompt: str = self.config.get(CONF_CLAUDE_PROMPT, "")
         try:
             self.schedule = await self._planner.async_generate_schedule(
                 prices=self.prices,
                 current_power_kw=self.current_power_kw,
                 power_history=self.power_history,
                 current_battery_pct=self.battery_level_pct,
+                custom_prompt=custom_prompt,
             )
             _LOGGER.info("Schedule regenerated: %d hours planned", len(self.schedule))
         except Exception as exc:  # noqa: BLE001

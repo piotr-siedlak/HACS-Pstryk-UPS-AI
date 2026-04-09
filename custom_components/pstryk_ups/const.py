@@ -24,6 +24,7 @@ CONF_MQTT_CHARGE_TOPIC = "mqtt_charge_topic"
 CONF_MQTT_DISCHARGE_TOPIC = "mqtt_discharge_topic"
 CONF_MQTT_BATTERY_TOPIC = "mqtt_battery_topic"
 CONF_REFRESH_INTERVAL = "refresh_interval_hours"
+CONF_CLAUDE_PROMPT = "claude_prompt"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 DEFAULT_REFRESH_INTERVAL = 6          # hours between Pstryk API calls
@@ -89,3 +90,66 @@ UPDATE_INTERVAL_HOURS = 1
 # ── Heuristic fallback config ─────────────────────────────────────────────────
 HEURISTIC_CHARGE_HOURS = 8            # cheapest N hours → charge
 HEURISTIC_DISCHARGE_HOURS = 4         # most expensive N hours → discharge
+
+# ── Claude prompt template ────────────────────────────────────────────────────
+# Uses str.format() placeholders. Literal braces in JSON examples use {{ }}.
+# Available variables: ups_model, capacity_kwh, num_strings, max_charge,
+#   max_discharge, current_battery_pct, battery_min_pct, battery_max_pct,
+#   price_table, current_power_kw, history_summary
+DEFAULT_CLAUDE_PROMPT = """\
+You are an expert energy management AI optimising a home UPS system.
+
+## UPS Configuration
+- Model: {ups_model}
+- Battery capacity: {capacity_kwh:.1f} kWh
+- Number of battery strings: {num_strings}
+- Maximum charge rate: {max_charge:.1f} kW
+- Maximum discharge rate: {max_discharge:.1f} kW
+- Current battery level: {current_battery_pct:.1f}%
+- Minimum battery reserve (never discharge below): {battery_min_pct:.1f}%
+- Maximum charge level (never charge above): {battery_max_pct:.1f}%
+
+## Electricity Price Forecast (PLN/kWh, hourly, UTC timestamps)
+Columns: timestamp | full_price PLN/kWh | cheap (provider flag) | expensive (provider flag)
+{price_table}
+
+## Current Household Power Draw
+{current_power_kw:.2f} kW
+
+## Historical Consumption (past 7 days)
+{history_summary}
+
+## Task
+Generate an optimised UPS charge/discharge schedule for the next 24 hours starting NOW.
+
+Optimisation rules:
+1. CHARGE during the cheapest hours (below the 24-h average price ideally).
+2. DISCHARGE during the most expensive hours (above average + margin).
+3. Never let the battery drop below {battery_min_pct:.1f}% (minimum reserve).
+4. Never charge the battery above {battery_max_pct:.1f}% (maximum charge level).
+5. Respect maximum charge/discharge rates.
+6. Consider typical household consumption to avoid over-discharging.
+7. If the price spread is too small (<15% between cheap and expensive), prefer IDLE.
+8. Account for charging/discharging efficiency (~90%).
+9. Use the cheap/expensive flags in the price table as hints from the energy provider.
+
+Return ONLY a valid JSON array — no prose, no markdown, no code fences — with exactly one object per hour for the next 24 hours:
+
+[
+  {{
+    "hour": "2024-01-15T08:00:00Z",
+    "action": "charge",
+    "price_pln_kwh": 0.4500,
+    "power_kw": 2.0,
+    "reason": "Lowest price window - 40% below 24-h average",
+    "battery_level_pct": 62.5
+  }},
+  ...
+]
+
+Constraints on the JSON:
+- "action" must be exactly one of: "charge", "discharge", "idle"
+- "power_kw" is positive for charging, negative for discharging, 0 for idle
+- "battery_level_pct" must stay within [{battery_min_pct:.1f}, {battery_max_pct:.1f}]
+- Include all 24 hours; if no action is optimal, use "idle"
+"""

@@ -17,6 +17,7 @@ from .const import (
     CLAUDE_MODEL,
     DEFAULT_BATTERY_MAX_PCT,
     DEFAULT_BATTERY_MIN_PCT,
+    DEFAULT_CLAUDE_PROMPT,
     HEURISTIC_CHARGE_HOURS,
     HEURISTIC_DISCHARGE_HOURS,
 )
@@ -55,6 +56,7 @@ class ClaudePlanner:
         current_power_kw: float,
         power_history: dict[str, Any],
         current_battery_pct: float = 50.0,
+        custom_prompt: str = "",
     ) -> list[dict[str, Any]]:
         """Return a 24-hour charge/discharge schedule.
 
@@ -75,7 +77,9 @@ class ClaudePlanner:
             return self._heuristic_schedule(prices, current_battery_pct)
 
         try:
-            prompt = self._build_prompt(prices, current_power_kw, power_history, current_battery_pct)
+            prompt = self._build_prompt(
+                prices, current_power_kw, power_history, current_battery_pct, custom_prompt
+            )
             _LOGGER.debug("Requesting schedule from Claude (%s)", CLAUDE_MODEL)
             message = await self._client.messages.create(
                 model=CLAUDE_MODEL,
@@ -124,6 +128,7 @@ class ClaudePlanner:
         current_power_kw: float,
         power_history: dict[str, Any],
         current_battery_pct: float,
+        custom_prompt: str = "",
     ) -> str:
         cfg = self._ups_config
         capacity_kwh: float = cfg.get("battery_capacity_kwh", 10.0)
@@ -134,69 +139,53 @@ class ClaudePlanner:
         battery_min_pct: float = cfg.get("battery_min_pct", DEFAULT_BATTERY_MIN_PCT)
         battery_max_pct: float = cfg.get("battery_max_pct", DEFAULT_BATTERY_MAX_PCT)
 
-        # Limit price table to next 48 h for prompt size
+        # Price table: timestamp | full_price | cheap flag | expensive flag
         price_table = "\n".join(
-            f"  {p['timestamp']}  {p['price']:.4f} PLN/kWh"
+            "  {}  {:.4f} PLN/kWh  cheap={}  expensive={}".format(
+                p["timestamp"],
+                p["price"],
+                p.get("is_cheap", False),
+                p.get("is_expensive", False),
+            )
             for p in prices[:48]
         )
 
         # Summarise history for prompt (keep it compact)
         history_summary = json.dumps(power_history, indent=2, default=str)[:2000]
 
-        return f"""You are an expert energy management AI optimising a home UPS system.
+        template = custom_prompt.strip() if custom_prompt and custom_prompt.strip() else DEFAULT_CLAUDE_PROMPT
 
-## UPS Configuration
-- Model: {ups_model}
-- Battery capacity: {capacity_kwh} kWh
-- Number of battery strings: {num_strings}
-- Maximum charge rate: {max_charge} kW
-- Maximum discharge rate: {max_discharge} kW
-- Current battery level: {current_battery_pct:.1f}%
-- Minimum battery reserve (never discharge below): {battery_min_pct:.1f}%
-- Maximum charge level (never charge above): {battery_max_pct:.1f}%
-
-## Electricity Price Forecast (PLN/kWh, hourly, UTC timestamps)
-{price_table}
-
-## Current Household Power Draw
-{current_power_kw:.2f} kW
-
-## Historical Consumption (past 7 days)
-{history_summary}
-
-## Task
-Generate an optimised UPS charge/discharge schedule for the next 24 hours starting NOW.
-
-Optimisation rules:
-1. CHARGE during the cheapest hours (below the 24-h average price ideally).
-2. DISCHARGE during the most expensive hours (above average + margin).
-3. Never let the battery drop below {battery_min_pct:.1f}% (minimum reserve).
-4. Never charge the battery above {battery_max_pct:.1f}% (maximum charge level).
-5. Respect maximum charge/discharge rates.
-6. Consider typical household consumption to avoid over-discharging.
-7. If the price spread is too small (<15% between cheap and expensive), prefer IDLE.
-8. Account for charging/discharging efficiency (~90%).
-
-Return ONLY a valid JSON array — no prose, no markdown, no code fences — with exactly one object per hour for the next 24 hours:
-
-[
-  {{
-    "hour": "2024-01-15T08:00:00Z",
-    "action": "charge",
-    "price_pln_kwh": 0.4500,
-    "power_kw": 2.0,
-    "reason": "Lowest price window – 40% below 24-h average",
-    "battery_level_pct": 62.5
-  }},
-  ...
-]
-
-Constraints on the JSON:
-- "action" must be exactly one of: "charge", "discharge", "idle"
-- "power_kw" is positive for charging, negative for discharging, 0 for idle
-- "battery_level_pct" must stay within [{battery_min_pct:.1f}, {battery_max_pct:.1f}]
-- Include all 24 hours; if no action is optimal, use "idle"
-"""
+        try:
+            return template.format(
+                ups_model=ups_model,
+                capacity_kwh=capacity_kwh,
+                num_strings=num_strings,
+                max_charge=max_charge,
+                max_discharge=max_discharge,
+                current_battery_pct=current_battery_pct,
+                battery_min_pct=battery_min_pct,
+                battery_max_pct=battery_max_pct,
+                price_table=price_table,
+                current_power_kw=current_power_kw,
+                history_summary=history_summary,
+            )
+        except (KeyError, ValueError) as exc:
+            _LOGGER.warning(
+                "Custom prompt template error (%s); falling back to default prompt", exc
+            )
+            return DEFAULT_CLAUDE_PROMPT.format(
+                ups_model=ups_model,
+                capacity_kwh=capacity_kwh,
+                num_strings=num_strings,
+                max_charge=max_charge,
+                max_discharge=max_discharge,
+                current_battery_pct=current_battery_pct,
+                battery_min_pct=battery_min_pct,
+                battery_max_pct=battery_max_pct,
+                price_table=price_table,
+                current_power_kw=current_power_kw,
+                history_summary=history_summary,
+            )
 
     # ── Response parsing ────────────────────────────────────────────────────
 
