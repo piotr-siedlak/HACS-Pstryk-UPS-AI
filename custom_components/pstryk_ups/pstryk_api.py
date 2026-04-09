@@ -229,6 +229,10 @@ class PstrykAPIClient:
             _LOGGER.warning("'frames' field missing or not a list in Pstryk response")
             return []
 
+        # Log the first raw frame at DEBUG so users can see the actual field names
+        if frames:
+            _LOGGER.debug("Pstryk raw first frame: %s", frames[0])
+
         prices: list[dict[str, Any]] = []
         for frame in frames:
             record = self._parse_frame(frame)
@@ -282,11 +286,17 @@ class PstrykAPIClient:
             # Flat layout: the frame itself carries the price fields
             pricing_src = frame
 
-        price_net = self._extract_price(pricing_src, self._PRICE_NET_FIELDS)
-        price_gross = self._extract_price(pricing_src, self._PRICE_GROSS_FIELDS)
+        price_net, net_field = self._extract_price(pricing_src, self._PRICE_NET_FIELDS)
+        price_gross, gross_field = self._extract_price(pricing_src, self._PRICE_GROSS_FIELDS)
         if price_gross == 0.0:
             # API may not expose a separate gross field; fall back to net
             price_gross = price_net
+
+        _LOGGER.debug(
+            "Frame %s: price=%.4f (field=%r), price_gross=%.4f (field=%r) | available keys: %s",
+            ts_raw[:16], price_net, net_field, price_gross, gross_field,
+            list(pricing_src.keys()),
+        )
 
         return {
             "timestamp": ts_raw,
@@ -295,13 +305,15 @@ class PstrykAPIClient:
         }
 
     @staticmethod
-    def _extract_price(data: dict[str, Any], field_names: tuple[str, ...]) -> float:
-        """Return the first parseable float found under any of *field_names*."""
+    def _extract_price(
+        data: dict[str, Any], field_names: tuple[str, ...], label: str = ""
+    ) -> tuple[float, str]:
+        """Return ``(value, field_name)`` for the first parseable float found."""
         for field in field_names:
             val = data.get(field)
             if val is not None:
                 try:
-                    return float(val)
+                    return float(val), field
                 except (TypeError, ValueError):
                     pass
-        return 0.0
+        return 0.0, ""
