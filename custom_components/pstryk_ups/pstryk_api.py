@@ -20,15 +20,27 @@ Response shape:
     {
       "frames": [
         {
-          "start": "2024-01-15T08:00:00Z",
-          "end":   "2024-01-15T09:00:00Z",
+          "start": "2026-04-09T11:00:00Z",
+          "end":   "2026-04-09T12:00:00Z",
           "metrics": {
-            "pricing": { "fix_price": 0.45, "gross_price": 0.55, ... }
+            "pricing": {
+              "tge_price":        -0.002,    ← raw TGE spot price (can be negative)
+              "dist_price":        0.4711,   ← distribution tariff
+              "service_price":     0.08,     ← service fee
+              "base_price":        0.5491,   ← tge + dist + service (no VAT)
+              "vat_component":     0.1263,   ← VAT
+              "excise_component":  0.005,    ← excise duty
+              "full_price":        0.6804,   ← THE CORRECT FIELD: total all-in price
+              "price_net":        -0.002,    ← alias for tge_price (NOT the full price)
+              "price_gross":       0.6804,   ← alias for full_price (identical)
+              "is_cheap":          true,
+              "is_expensive":      false
+            }
           }
         },
         ...
       ],
-      "summary": { ... }
+      "summary": { "pricing": { "full_price_avg": 0.96, ... } }
     }
 """
 from __future__ import annotations
@@ -63,13 +75,15 @@ class PstrykAuthError(PstrykAPIError):
 class PstrykAPIClient:
     """Thin async wrapper around the Pstryk unified-metrics pricing endpoint."""
 
-    # Field aliases tried in order when extracting price values from a frame.
-    # total_cost is the full price the customer pays (energy + distribution + fees + taxes).
+    # Field aliases tried in order when extracting the full customer price from a frame.
+    # full_price = tge_price + dist_price + service_price + vat_component + excise_component
+    # price_gross is identical to full_price in the Pstryk API response.
+    # price_net / tge_price is the raw TGE spot price only (no distribution, no taxes) — NOT suitable.
     _PRICE_NET_FIELDS = (
-        "total_cost", "fix_price", "net_price", "price", "tge_price", "energy_price", "value"
+        "full_price", "total_cost", "fix_price", "net_price", "price", "tge_price", "energy_price", "value"
     )
     _PRICE_GROSS_FIELDS = (
-        "gross_price", "price_with_vat", "price_gross", "gross"
+        "price_gross", "gross_price", "price_with_vat", "gross"
     )
 
     def __init__(self, api_key: str, session: aiohttp.ClientSession) -> None:

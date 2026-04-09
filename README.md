@@ -6,7 +6,7 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 
 ## Features
 
-- **Full electricity price** — fetches `total_cost` (energy + distribution + fees + taxes) from the Pstryk API, so scheduling decisions reflect what you actually pay
+- **Full electricity price** — fetches `full_price` (TGE spot + distribution + service + VAT + excise) from the Pstryk API, so scheduling decisions reflect what you actually pay
 - **Current-day and next-day prices** — after ~15:00 Warsaw time, next-day TGE prices are automatically included so Claude can optimise across midnight
 - **AI schedule planning** — sends prices, household consumption history, and battery constraints to Claude, which returns a 24-hour hourly charge/discharge plan optimised to minimise cost
 - **Heuristic fallback** — if Claude is unavailable, a deterministic algorithm charges during the cheapest hours and discharges during the most expensive, respecting battery min/max at all times
@@ -288,11 +288,14 @@ logger:
 
 ## Changelog
 
+### v1.7.0
+- **Price field corrected**: Now uses `full_price` from the Pstryk API — the true all-inclusive price (TGE spot + distribution + service + VAT + excise). Previous versions were falling back to `tge_price` (raw TGE spot only, can be near-zero or negative), causing wildly wrong scheduling decisions
+
 ### v1.6.0
 - **Manual refresh button**: Added `button.pstryk_ups_refresh_prices` — press to immediately fetch fresh Pstryk prices and regenerate the schedule without waiting for the next hourly cycle
 
 ### v1.5.0
-- **Price field**: Changed to `total_cost` as the primary price field — includes energy, distribution, fees, and taxes — so scheduling reflects the actual price you pay, not just the raw TGE spot price
+- **Price field**: Changed to `total_cost` as the primary price field
 
 ### v1.4.0
 - **API status sensors**: Added `sensor.pstryk_ups_pstryk_api_status` and `sensor.pstryk_ups_claude_api_status` with last-success timestamp, last error message, and schedule source (claude/heuristic) in attributes
