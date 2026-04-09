@@ -7,16 +7,19 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 ## Features
 
 - **Full electricity price** — fetches `full_price` (TGE spot + distribution + service + VAT + excise) from the Pstryk API, so scheduling decisions reflect what you actually pay
+- **Cheap/expensive flags** — Pstryk's own `is_cheap` / `is_expensive` signals are passed to Claude as additional hints alongside the raw prices
 - **Current-day and next-day prices** — after ~15:00 Warsaw time, next-day TGE prices are automatically included so Claude can optimise across midnight
 - **AI schedule planning** — sends prices, household consumption history, and battery constraints to Claude, which returns a 24-hour hourly charge/discharge plan optimised to minimise cost
+- **Configurable Claude prompt** — the full prompt sent to Claude is editable from the Configure panel; use `{variable}` placeholders to inject live data
 - **Heuristic fallback** — if Claude is unavailable, a deterministic algorithm charges during the cheapest hours and discharges during the most expensive, respecting battery min/max at all times
 - **Configurable battery constraints** — set minimum (reserve) and maximum charge % passed directly to Claude for realistic planning
-- **MQTT integration** — subscribes to configurable topics for real-time power draw, historical consumption, and battery state of charge; publishes `1`/`0` commands to separate charge and discharge control topics
-- **API status monitoring** — dedicated sensors show whether the Pstryk and Claude APIs are reachable, with last-success timestamp, last error message, and schedule source (claude/heuristic)
+- **MQTT integration (optional)** — subscribes to configurable topics for real-time power draw, historical consumption, and battery state of charge; publishes `1`/`0` commands to separate charge and discharge control topics. All MQTT topics are optional — the integration works for price fetching and scheduling without them
+- **Real-time MQTT sensor updates** — sensor values update instantly on every incoming MQTT message, not just on the hourly coordinator cycle
+- **API status monitoring** — dedicated sensors show whether the Pstryk and Claude APIs are reachable, with last request URL, last-success timestamp, last error, last prompt sent, and MQTT connection status
 - **9 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk API status, Claude API status
 - **3 switch entities** — manual charging toggle, manual discharging toggle, auto-schedule enable/disable
 - **1 button entity** — manual price refresh that immediately fetches fresh Pstryk prices and regenerates the schedule, without affecting the automatic hourly cron
-- **Single-page Configure panel** — update all UPS parameters and MQTT topics together on one screen via the **Configure** button, no need to remove the integration
+- **Single-page Configure panel** — update all UPS parameters, MQTT topics, and the Claude prompt together on one screen; changes take effect immediately after saving
 - **Reconfigure support** — update API keys independently without touching UPS or MQTT settings
 - **English and Polish translations**
 
@@ -29,7 +32,7 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 | Home Assistant | 2024.1.0 or newer |
 | HACS | 1.31.0 or newer |
 | Python package | `anthropic>=0.40.0` (installed automatically) |
-| HA integration | MQTT (built-in, must be configured) |
+| HA integration | MQTT (optional — configure in HA if UPS control via MQTT is needed) |
 | API keys | Pstryk API token + Anthropic API key |
 
 ---
@@ -56,7 +59,7 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 
 - **Pstryk API key** — obtain from the [Pstryk customer portal](https://pstryk.pl).
 - **Anthropic API key** — obtain from [console.anthropic.com](https://console.anthropic.com/).
-- **MQTT broker** configured in Home Assistant (Settings → Devices & Services → MQTT).
+- **MQTT broker** (optional) — configure in Home Assistant under Settings → Devices & Services → MQTT if you want UPS charge/discharge control. The integration loads and fetches prices without MQTT.
 
 ### Adding the integration
 
@@ -87,6 +90,8 @@ Both keys are validated against their respective APIs before proceeding.
 
 #### Step 3 — MQTT Topics & Scheduling
 
+All MQTT topic fields are **optional**. Leave them empty to skip and configure later from the Configure panel.
+
 | Field | Description |
 |---|---|
 | Real-time Power Topic | MQTT topic publishing household power draw in kW |
@@ -96,13 +101,17 @@ Both keys are validated against their respective APIs before proceeding.
 | Battery Level Topic | MQTT topic publishing battery state of charge in % |
 | Price Refresh Interval | How often (in hours) to fetch new prices from Pstryk (default: 6) |
 
-All fields are required.
-
 ### Changing settings after setup
 
-Go to **Settings → Devices & Services → Pstryk UPS AI Optimizer → Configure** to update all UPS parameters and MQTT topics on a single page. Changes take effect immediately after saving.
+Go to **Settings → Devices & Services → Pstryk UPS AI Optimizer → Configure** to update all UPS parameters, MQTT topics, and the Claude prompt on a single page. Changes take effect immediately after saving.
 
 To update API keys, use the **Reconfigure** option from the integration's three-dot (⋮) menu.
+
+### MQTT broker connection
+
+MQTT broker credentials (host, port, username, password) are configured **once** in Home Assistant's built-in MQTT integration — not in this integration. This integration only needs the topic names.
+
+To set up the MQTT broker: **Settings → Devices & Services → Add Integration → MQTT**.
 
 ---
 
@@ -117,8 +126,6 @@ Plain numeric:
 Or JSON:
 ```json
 {"power": 1.85}
-```
-```json
 {"power_kw": 1.85}
 ```
 
@@ -146,22 +153,14 @@ Plain numeric:
 Or JSON:
 ```json
 {"soc": 75.5}
-```
-```json
 {"battery_level": 75.5}
 ```
 
-### Charge control topic (publish)
+### Charge / Discharge control topics (publish)
 
 The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — whenever:
-- The auto-schedule activates or deactivates charging for the current hour
-- The user toggles the **UPS Charging** switch manually
-
-### Discharge control topic (publish)
-
-The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — whenever:
-- The auto-schedule activates or deactivates discharging for the current hour
-- The user toggles the **UPS Discharging** switch manually
+- The auto-schedule activates or deactivates charging/discharging for the current hour
+- The user toggles the **UPS Charging** or **UPS Discharging** switch manually
 
 ---
 
@@ -171,15 +170,15 @@ The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — 
 
 | Entity ID | Description | Unit | Key Attributes |
 |---|---|---|---|
-| `sensor.pstryk_ups_electricity_price` | Current total electricity price (incl. distribution + taxes) | PLN/kWh | `upcoming_prices`, `last_refresh`, `price_count` |
+| `sensor.pstryk_ups_electricity_price` | Current total electricity price (incl. all fees and taxes) | PLN/kWh | `upcoming_prices`, `last_refresh`, `price_count` |
 | `sensor.pstryk_ups_household_power_draw` | Live household power draw from MQTT | kW | `history_daily_entries`, `history_hourly_entries` |
 | `sensor.pstryk_ups_schedule_status` | Current scheduled action | charge / discharge / idle | `schedule` (full 24-h list), `schedule_hours`, `auto_schedule_enabled` |
 | `sensor.pstryk_ups_next_charge_window` | Start of the next planned charging window | timestamp | `charge_windows` |
 | `sensor.pstryk_ups_next_discharge_window` | Start of the next planned discharge window | timestamp | `discharge_windows` |
 | `sensor.pstryk_ups_battery_level` | Battery state of charge from MQTT | % | `projected_end_level_pct` |
 | `sensor.pstryk_ups_estimated_daily_savings` | Estimated PLN saved today vs always-idle | PLN | `scheduled_charge_hours`, `scheduled_discharge_hours` |
-| `sensor.pstryk_ups_pstryk_api_status` | Pstryk API reachability | ok / error / unknown | `last_success`, `last_error`, `last_checked`, `next_day_prices_available` |
-| `sensor.pstryk_ups_claude_api_status` | Claude AI API status and schedule source | ok / error / unknown | `last_success`, `last_error`, `schedule_source` (claude / heuristic) |
+| `sensor.pstryk_ups_pstryk_api_status` | Pstryk API reachability | ok / error / unknown | `last_request`, `last_success`, `last_error`, `last_checked`, `next_day_prices_available`, `mqtt_status`, `mqtt_power_topic`, `mqtt_last_power_update`, `mqtt_history_topic`, `mqtt_last_history_update`, `mqtt_charge_topic`, `mqtt_discharge_topic`, `mqtt_battery_topic`, `mqtt_last_battery_update` |
+| `sensor.pstryk_ups_claude_api_status` | Claude AI API status and schedule source | ok / error / unknown | `last_request`, `last_success`, `last_error`, `schedule_source` (claude / heuristic), `last_prompt` |
 
 ### Switches
 
@@ -200,21 +199,48 @@ The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — 
 ## How the AI Scheduling Works
 
 1. Every hour the coordinator checks whether prices need refreshing based on the configured interval.
-2. Prices fetched from Pstryk use the `total_cost` field — the full amount you pay per kWh including energy, distribution, and all taxes. This ensures scheduling decisions match your actual bill.
+2. Prices fetched from Pstryk use the `full_price` field — the true all-inclusive price: TGE spot + distribution + service + VAT + excise. Each hourly record also carries `is_cheap` and `is_expensive` flags set by Pstryk.
 3. Current-day prices are always available. After ~15:00 Warsaw time the window is automatically extended to include next-day TGE prices, so Claude can optimise overnight cycles.
 4. When fresh prices arrive, they are sent to Claude along with:
    - Your UPS configuration (capacity, charge/discharge rates, min/max battery %)
    - Current household power draw (from MQTT)
    - Historical consumption data from MQTT (past 7 days)
    - Current battery state of charge
+   - `is_cheap` / `is_expensive` flags per hour as additional hints
 5. Claude returns a 24-hour schedule with hourly actions (`charge`, `discharge`, `idle`), planned power (kW), price context, reason, and projected battery level.
 6. If Claude fails (API error, network issue, unparseable response), the integration automatically falls back to a heuristic:
    - Charge during the cheapest upcoming hours
    - Discharge during the most expensive upcoming hours
    - Battery min/max % constraints always respected
-7. The `sensor.pstryk_ups_claude_api_status` sensor shows whether Claude or the heuristic generated the current schedule, and exposes any error message in its attributes.
+7. The `sensor.pstryk_ups_claude_api_status` sensor shows whether Claude or the heuristic generated the current schedule, exposes any error message, and stores the full last prompt sent to Claude in its `last_prompt` attribute.
 8. When **Auto Schedule** is ON, both charging and discharging switches update automatically each hour to follow the plan.
 9. You can override at any time by toggling the switches manually — overrides last until the next hourly update when auto-schedule re-applies.
+
+---
+
+## Customising the Claude Prompt
+
+The full prompt sent to Claude is stored in the Configure panel and can be edited freely. Open **Settings → Devices & Services → Pstryk UPS AI Optimizer → Configure** and scroll to the **Claude AI Prompt** field.
+
+The prompt uses Python `str.format()` placeholders filled at runtime:
+
+| Placeholder | Content |
+|---|---|
+| `{ups_model}` | UPS model name |
+| `{capacity_kwh}` | Battery capacity in kWh |
+| `{num_strings}` | Number of battery strings |
+| `{max_charge}` | Max charge rate in kW |
+| `{max_discharge}` | Max discharge rate in kW |
+| `{current_battery_pct}` | Current battery level % |
+| `{battery_min_pct}` | Configured minimum battery % |
+| `{battery_max_pct}` | Configured maximum battery % |
+| `{price_table}` | Hourly price table with `full_price`, `is_cheap`, `is_expensive` |
+| `{current_power_kw}` | Current household power draw in kW |
+| `{history_summary}` | JSON consumption history (last 7 days) |
+
+Use `{{` and `}}` for literal braces in JSON examples within your prompt. If the custom prompt contains an invalid placeholder, the integration automatically falls back to the built-in default.
+
+The last prompt actually sent to Claude is visible at any time in `sensor.pstryk_ups_claude_api_status` → `last_prompt` attribute.
 
 ---
 
@@ -266,14 +292,18 @@ content: >
 | Integration won't set up — "Cannot connect" | Check your network and that `api.pstryk.pl` is reachable |
 | "Invalid Pstryk API key" | Verify the token in the Pstryk customer portal; the key is sent as a raw `Authorization` header (no "Token" prefix) |
 | "Invalid Claude API key" | Verify the key at console.anthropic.com and check your usage limits |
-| Electricity price shows 0 or wrong value | Check `sensor.pstryk_ups_pstryk_api_status` attributes for `last_error`; the integration uses `total_cost` field from the API |
-| Claude status shows "error" | Check `sensor.pstryk_ups_claude_api_status` → `last_error` attribute; the heuristic fallback is active |
+| Electricity price shows 0 or wrong value | Check `sensor.pstryk_ups_pstryk_api_status` → `last_error`; the `last_request` attribute shows the exact URL that was called |
+| Claude status shows "error" | Check `sensor.pstryk_ups_claude_api_status` → `last_error`; the heuristic fallback is active |
 | Schedule source shows "heuristic" | Claude API returned an error — check your Anthropic API key and credit balance |
-| No MQTT data arriving | Ensure the MQTT broker is running and the configured topics are publishing |
-| Schedule shows all "idle" | Claude returned an empty or unparseable schedule; check HA logs for details |
-| Battery level stuck at 50% | Verify your device is publishing to the configured battery MQTT topic |
+| Sensors not updating from MQTT | Check `sensor.pstryk_ups_pstryk_api_status` → `mqtt_status` and `mqtt_last_power_update` / `mqtt_last_battery_update` to confirm messages are arriving |
+| MQTT status shows "unavailable" | The HA MQTT integration is not set up — go to Settings → Devices & Services → Add Integration → MQTT and configure your broker |
+| MQTT status shows "no_topics" | MQTT is connected but no topics are configured — go to Configure and fill in the topic fields |
+| No MQTT data arriving | Verify your device is publishing to the topics shown in `sensor.pstryk_ups_pstryk_api_status` attributes |
+| Schedule shows all "idle" | Claude returned an empty or unparseable schedule; check `last_prompt` attribute for what was sent, and HA logs for details |
+| Battery level stuck at 50% | Verify your device is publishing to the configured battery MQTT topic; check `mqtt_last_battery_update` |
 | UPS not charging/discharging | Verify your device subscribes to the correct MQTT topics and responds to `1`/`0` payloads |
-| MQTT topics missing from Configure panel | All UPS and MQTT settings appear together on a single Configure page — scroll down if needed |
+| Custom prompt not working | Check `last_prompt` attribute on the Claude sensor to see what was actually rendered; ensure all `{placeholder}` names are correct and literal braces use `{{` / `}}` |
+| Where to set MQTT broker IP/port/password | These go in the HA built-in MQTT integration, not here — Settings → Devices & Services → MQTT |
 
 Enable debug logging for detailed diagnostics:
 
@@ -288,20 +318,28 @@ logger:
 
 ## Changelog
 
+### v1.10.x
+- **Last API request visibility**: `sensor.pstryk_ups_pstryk_api_status` now shows the exact URL sent to the Pstryk API in `last_request`; `sensor.pstryk_ups_claude_api_status` shows the Anthropic API call summary in `last_request` and the full rendered prompt in `last_prompt`
+- **Real-time MQTT sensor updates**: Fixed sensors updating only on the hourly cycle — values now update instantly on every incoming MQTT message
+- **MQTT last-update timestamps**: Each MQTT data topic has a `mqtt_last_power_update`, `mqtt_last_history_update`, `mqtt_last_battery_update` timestamp visible in sensor attributes
+
+### v1.9.0
+- **MQTT now optional**: Integration loads and fetches prices even when the HA MQTT integration is not set up. All MQTT topic fields are optional in the setup wizard and Configure panel. `mqtt_status` (`connected` / `no_topics` / `unavailable`) and configured topic names visible in `sensor.pstryk_ups_pstryk_api_status` attributes
+
+### v1.8.0
+- **Cheap/expensive price flags**: Pstryk's `is_cheap` and `is_expensive` booleans are now fetched per hour and included in the price table sent to Claude
+- **Configurable Claude prompt**: The full prompt template is editable from the Configure panel. Supports `{variable}` placeholders for live data injection. Custom prompt visible and auditable via `last_prompt` attribute on the Claude sensor
+
 ### v1.7.0
 - **Price field corrected**: Now uses `full_price` from the Pstryk API — the true all-inclusive price (TGE spot + distribution + service + VAT + excise). Previous versions were falling back to `tge_price` (raw TGE spot only, can be near-zero or negative), causing wildly wrong scheduling decisions
 
 ### v1.6.0
 - **Manual refresh button**: Added `button.pstryk_ups_refresh_prices` — press to immediately fetch fresh Pstryk prices and regenerate the schedule without waiting for the next hourly cycle
 
-### v1.5.0
-- **Price field**: Changed to `total_cost` as the primary price field
-
 ### v1.4.0
 - **API status sensors**: Added `sensor.pstryk_ups_pstryk_api_status` and `sensor.pstryk_ups_claude_api_status` with last-success timestamp, last error message, and schedule source (claude/heuristic) in attributes
-- **Single-page Configure panel**: Merged UPS parameters and MQTT topics into one page — previously MQTT settings were inaccessible from the Configure button
+- **Single-page Configure panel**: Merged UPS parameters and MQTT topics into one page
 - **Discharging switch**: Added `switch.pstryk_ups_ups_discharging` for manual and auto-schedule controlled discharge
-- **Battery topic required**: Battery MQTT topic is now required (was incorrectly marked optional)
 
 ### v1.3.0
 - **Auth header fix**: Removed erroneous `Token` prefix from the Pstryk API `Authorization` header — raw key is correct per the Pstryk API spec
