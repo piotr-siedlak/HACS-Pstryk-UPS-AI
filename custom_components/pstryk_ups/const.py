@@ -34,8 +34,17 @@ DEFAULT_MQTT_CONTROL_PAYLOAD_OFF = "OFF"
 
 # ── Pstryk API ───────────────────────────────────────────────────────────────
 PSTRYK_API_BASE_URL = "https://api.pstryk.pl"
-PSTRYK_PRICING_ENDPOINT = "/integrations/pricing/"
+# Unified metrics endpoint – the only documented pricing endpoint in the swagger.
+# Query with ?metrics=pricing&resolution=hour&window_start=...&window_end=...
+PSTRYK_UNIFIED_ENDPOINT = "/integrations/meter-data/unified-metrics/"
 PSTRYK_API_TIMEOUT = 30               # seconds
+
+# ── Price availability timing ─────────────────────────────────────────────────
+# TGE (Polish Power Exchange) publishes next-day spot prices each afternoon.
+# Before this hour (Warsaw/CET time) only current-day prices are available;
+# after it we extend the fetch window to cover the full next day.
+NEXT_DAY_PRICES_HOUR = 15             # 15:00 Warsaw time
+WARSAW_TZ_NAME = "Europe/Warsaw"
 
 # ── Claude AI ────────────────────────────────────────────────────────────────
 CLAUDE_MODEL = "claude-opus-4-6"

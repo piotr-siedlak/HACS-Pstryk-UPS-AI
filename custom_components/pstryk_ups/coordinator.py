@@ -4,8 +4,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from homeassistant.components import mqtt
 from homeassistant.config_entries import ConfigEntry
@@ -34,7 +35,9 @@ from .const import (
     DEFAULT_MQTT_CONTROL_PAYLOAD_ON,
     DEFAULT_REFRESH_INTERVAL,
     DOMAIN,
+    NEXT_DAY_PRICES_HOUR,
     UPDATE_INTERVAL_HOURS,
+    WARSAW_TZ_NAME,
 )
 from .pstryk_api import PstrykAPIClient, PstrykAPIError
 
@@ -84,6 +87,12 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # How often (hours) to call the Pstryk API
         self._price_refresh_interval = timedelta(hours=refresh_interval_h)
+
+        # Track whether we already fetched next-day prices today (Warsaw date).
+        # TGE publishes next-day prices around 14–15:00 Warsaw; we force one
+        # extra refresh after NEXT_DAY_PRICES_HOUR if this is still None / stale.
+        self._next_day_prices_fetched_date: date | None = None
+        self._warsaw = ZoneInfo(WARSAW_TZ_NAME)
 
         # MQTT subscription cancel callbacks
         self._mqtt_unsubs: list[Any] = []
@@ -220,28 +229,67 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # ── DataUpdateCoordinator ───────────────────────────────────────────────
 
-    async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch prices if TTL expired, regenerate schedule, apply auto-schedule."""
-        now = datetime.now(timezone.utc)
-        needs_price_refresh = (
-            self.last_price_refresh is None
-            or (now - self.last_price_refresh) >= self._price_refresh_interval
-        )
+    def _needs_price_refresh(self, now_utc: datetime, now_warsaw: datetime) -> bool:
+        """Return True when a Pstryk API call should be made this cycle.
 
-        if needs_price_refresh:
+        Three triggers:
+        1. First run (no prices yet).
+        2. Configured TTL has elapsed since the last successful fetch.
+        3. It is past NEXT_DAY_PRICES_HOUR in Warsaw and we have not yet
+           captured next-day prices for today's Warsaw date — this ensures
+           we pick up tomorrow's TGE prices shortly after they are published,
+           even if the regular TTL has not expired yet.
+        """
+        if self.last_price_refresh is None:
+            return True
+        if (now_utc - self.last_price_refresh) >= self._price_refresh_interval:
+            return True
+        # After TGE publication hour: refresh once per Warsaw-calendar-day
+        today_warsaw = now_warsaw.date()
+        if (
+            now_warsaw.hour >= NEXT_DAY_PRICES_HOUR
+            and self._next_day_prices_fetched_date != today_warsaw
+        ):
+            _LOGGER.debug(
+                "Triggering next-day price fetch (Warsaw hour=%d, last_fetch_date=%s)",
+                now_warsaw.hour, self._next_day_prices_fetched_date,
+            )
+            return True
+        return False
+
+    async def _async_update_data(self) -> dict[str, Any]:
+        """Fetch prices when needed, regenerate schedule, apply auto-schedule."""
+        now_utc = datetime.now(timezone.utc)
+        now_warsaw = now_utc.astimezone(self._warsaw)
+
+        if self._needs_price_refresh(now_utc, now_warsaw):
             try:
                 _LOGGER.debug("Refreshing Pstryk prices")
-                self.prices = await self._pstryk.async_get_prices(hours_ahead=48)
-                self.last_price_refresh = now
-                _LOGGER.info("Fetched %d price records from Pstryk", len(self.prices))
+                prices, includes_next_day = await self._pstryk.async_get_prices()
+                self.prices = prices
+                self.last_price_refresh = now_utc
+
+                if includes_next_day:
+                    self._next_day_prices_fetched_date = now_warsaw.date()
+                    _LOGGER.info(
+                        "Fetched %d price records including next-day prices", len(prices)
+                    )
+                else:
+                    _LOGGER.info(
+                        "Fetched %d price records (current day only, next-day not yet published)",
+                        len(prices),
+                    )
+
                 # Regenerate schedule whenever prices change
                 await self._refresh_schedule()
             except PstrykAPIError as exc:
-                # Don't fail the whole update — work with stale prices
+                # Don't fail the whole coordinator — continue with stale prices
                 if self.prices:
                     _LOGGER.warning("Pstryk API error (using cached prices): %s", exc)
                 else:
-                    raise UpdateFailed(f"Pstryk API error and no cached prices: {exc}") from exc
+                    raise UpdateFailed(
+                        f"Pstryk API error and no cached prices: {exc}"
+                    ) from exc
 
         # Apply auto-schedule for the current hour
         if self.auto_schedule_enabled and self.schedule:
@@ -332,6 +380,9 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "last_price_refresh": (
                 self.last_price_refresh.isoformat() if self.last_price_refresh else None
             ),
+            # Indicates whether tomorrow's prices are included in the current dataset.
+            # False before ~15:00 Warsaw; True once TGE publishes next-day prices.
+            "next_day_prices_available": self._next_day_prices_fetched_date == now.astimezone(self._warsaw).date(),
         }
 
     # ── Price & schedule helpers ────────────────────────────────────────────

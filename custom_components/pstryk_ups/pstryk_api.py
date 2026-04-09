@@ -1,19 +1,55 @@
-"""Async client for the Pstryk electricity pricing API."""
+"""Async client for the Pstryk electricity pricing API.
+
+Prices come from the TGE (Polish Power Exchange) spot market:
+  - Current-day prices: always available.
+  - Next-day prices:    published each afternoon, typically around 14:00–15:00
+                        Warsaw/CET time.  Before that hour only today's prices
+                        exist; after it we extend the fetch window to cover the
+                        full next day.
+
+Endpoint used:
+    GET /integrations/meter-data/unified-metrics/
+        ?metrics=pricing
+        &resolution=hour
+        &window_start=<ISO8601 UTC>
+        &window_end=<ISO8601 UTC>
+        &for_tz=Europe/Warsaw
+    Authorization: Token <api_key>
+
+Response shape:
+    {
+      "frames": [
+        {
+          "start": "2024-01-15T08:00:00Z",
+          "end":   "2024-01-15T09:00:00Z",
+          "metrics": {
+            "pricing": { "fix_price": 0.45, "gross_price": 0.55, ... }
+          }
+        },
+        ...
+      ],
+      "summary": { ... }
+    }
+"""
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import aiohttp
 
 from .const import (
+    NEXT_DAY_PRICES_HOUR,
     PSTRYK_API_BASE_URL,
     PSTRYK_API_TIMEOUT,
-    PSTRYK_PRICING_ENDPOINT,
+    PSTRYK_UNIFIED_ENDPOINT,
+    WARSAW_TZ_NAME,
 )
 
 _LOGGER = logging.getLogger(__name__)
+_WARSAW = ZoneInfo(WARSAW_TZ_NAME)
 
 
 class PstrykAPIError(Exception):
@@ -25,50 +61,97 @@ class PstrykAuthError(PstrykAPIError):
 
 
 class PstrykAPIClient:
-    """Thin async wrapper around the Pstryk REST pricing endpoint.
+    """Thin async wrapper around the Pstryk unified-metrics pricing endpoint."""
 
-    The client fetches hourly electricity prices for a configurable window
-    (default: now → now + 48 h).  It normalises the response regardless of
-    whether the API returns a flat list or a paginated ``results`` envelope,
-    and regardless of which exact field names are used for timestamp and price.
-    """
-
-    # Field aliases tried in order when parsing each price record
-    _TS_FIELDS = ("datetime_from", "datetime", "timestamp", "date_from", "date")
-    _PRICE_NET_FIELDS = ("price_net", "price", "net_price", "value", "energy_price")
-    _PRICE_GROSS_FIELDS = ("price_gross", "gross_price", "price_with_vat")
+    # Field aliases tried in order when extracting price values from a frame
+    _PRICE_NET_FIELDS = (
+        "fix_price", "net_price", "price", "tge_price", "energy_price", "value"
+    )
+    _PRICE_GROSS_FIELDS = (
+        "gross_price", "price_with_vat", "price_gross", "gross"
+    )
 
     def __init__(self, api_key: str, session: aiohttp.ClientSession) -> None:
         self._api_key = api_key
         self._session = session
         self._base_url = PSTRYK_API_BASE_URL.rstrip("/")
 
-    # ── Public methods ──────────────────────────────────────────────────────
+    # ── Window helpers ──────────────────────────────────────────────────────
 
-    async def async_get_prices(
-        self,
-        hours_ahead: int = 48,
-    ) -> list[dict[str, Any]]:
-        """Return a list of hourly price records for the next *hours_ahead* hours.
+    @staticmethod
+    def get_fetch_window() -> tuple[datetime, datetime, bool]:
+        """Return ``(window_start, window_end, includes_next_day)``.
 
-        Each record contains:
-        - ``timestamp``   – ISO-8601 string (start of the hour, UTC)
-        - ``price``       – net price in PLN/kWh (float)
-        - ``price_gross`` – gross price in PLN/kWh (float); equals ``price``
-                            when the API does not expose a gross field
+        Pstryk API parameter semantics (from the official documentation):
+          ``window_start=T`` → the **first** returned period starts at T
+                               (e.g. T=11:00Z → period 11:00–12:00Z is first)
+          ``window_end=T``   → the **last** returned period *ends* at T
+                               (e.g. T=11:00Z → period 10:00–11:00Z is last)
+
+        Therefore:
+          * ``window_start`` = floor of the current UTC hour  (inclusive start)
+          * ``window_end``   = Warsaw midnight (00:00) of tomorrow, expressed in
+                               UTC.  This is the end-of-period wall-clock for the
+                               final Warsaw hour of the day (23:00–00:00 Warsaw).
+
+        After ``NEXT_DAY_PRICES_HOUR`` in Warsaw (TGE publishes next-day prices
+        ~14:00–15:00 CET), we extend ``window_end`` by one more day so that the
+        full next-day price table is included in one API call.
         """
-        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
-        date_from = now.strftime("%Y-%m-%dT%H:%M:%SZ")
-        date_to = (now + timedelta(hours=hours_ahead)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        now_utc = datetime.now(timezone.utc)
+        now_warsaw = now_utc.astimezone(_WARSAW)
 
-        url = f"{self._base_url}{PSTRYK_PRICING_ENDPOINT}"
+        # window_start: start of the current Warsaw hour expressed in UTC.
+        # API will return the period [window_start, window_start+1h) as the first frame.
+        window_start = now_utc.replace(minute=0, second=0, microsecond=0)
+
+        # Tomorrow midnight Warsaw = "end" of the last hour of today (23:00–00:00 Warsaw).
+        # Expressed as UTC this is tomorrow's 22:00 UTC (CET) or 21:00 UTC (CEST).
+        today_midnight_warsaw = (
+            now_warsaw.replace(hour=0, minute=0, second=0, microsecond=0)
+            + timedelta(days=1)
+        )
+
+        includes_next_day = now_warsaw.hour >= NEXT_DAY_PRICES_HOUR
+        if includes_next_day:
+            # Extend to end of tomorrow: day-after-tomorrow 00:00 Warsaw → UTC
+            window_end = (today_midnight_warsaw + timedelta(days=1)).astimezone(timezone.utc)
+        else:
+            window_end = today_midnight_warsaw.astimezone(timezone.utc)
+
+        return window_start, window_end, includes_next_day
+
+    # ── Public API ──────────────────────────────────────────────────────────
+
+    async def async_get_prices(self) -> tuple[list[dict[str, Any]], bool]:
+        """Fetch hourly TGE spot prices for the available window.
+
+        Returns ``(prices, includes_next_day)`` where:
+        - ``prices`` is a list of ``{"timestamp", "price", "price_gross"}`` dicts.
+        - ``includes_next_day`` is True when the response covers tomorrow's prices.
+
+        Before 15:00 Warsaw only current-day remaining hours are returned.
+        After 15:00 Warsaw the full next day is included as well.
+        """
+        window_start, window_end, includes_next_day = self.get_fetch_window()
+
+        url = f"{self._base_url}{PSTRYK_UNIFIED_ENDPOINT}"
         headers = {
             "Authorization": f"Token {self._api_key}",
             "Accept": "application/json",
         }
-        params = {"date_from": date_from, "date_to": date_to}
+        params = {
+            "metrics": "pricing",
+            "resolution": "hour",
+            "window_start": window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "window_end": window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "for_tz": WARSAW_TZ_NAME,
+        }
 
-        _LOGGER.debug("Fetching Pstryk prices: %s params=%s", url, params)
+        _LOGGER.debug(
+            "Fetching Pstryk prices  %s → %s  includes_next_day=%s",
+            params["window_start"], params["window_end"], includes_next_day,
+        )
 
         try:
             async with self._session.get(
@@ -88,91 +171,117 @@ class PstrykAPIClient:
                     )
                 payload = await resp.json(content_type=None)
         except aiohttp.ClientError as exc:
-            raise PstrykAPIError(f"Network error contacting Pstryk API: {exc}") from exc
+            raise PstrykAPIError(
+                f"Network error contacting Pstryk API: {exc}"
+            ) from exc
 
-        records = self._extract_records(payload)
-        parsed = [self._parse_record(r) for r in records]
-        prices = [p for p in parsed if p is not None]
-
-        _LOGGER.debug("Parsed %d price records from Pstryk API", len(prices))
-        return prices
+        prices = self._parse_unified_response(payload)
+        _LOGGER.info(
+            "Fetched %d price records from Pstryk (includes_next_day=%s)",
+            len(prices), includes_next_day,
+        )
+        return prices, includes_next_day
 
     async def async_validate_key(self) -> bool:
-        """Return True when the API key is accepted (HTTP 200 or empty result)."""
+        """Return True when the API key is accepted by the server."""
         try:
-            await self.async_get_prices(hours_ahead=2)
+            await self.async_get_prices()
             return True
         except PstrykAuthError:
             return False
         except PstrykAPIError as exc:
-            _LOGGER.warning("Pstryk API validation error: %s", exc)
-            # A non-auth error (e.g. 500) is treated as an ambiguous result;
-            # we allow the user to save the key and retry at runtime.
+            # Network / server error — ambiguous; allow save, fail at runtime
+            _LOGGER.warning("Pstryk API key validation: non-auth error — %s", exc)
             return True
 
-    # ── Private helpers ─────────────────────────────────────────────────────
+    # ── Response parsing ────────────────────────────────────────────────────
 
-    @staticmethod
-    def _extract_records(payload: Any) -> list[Any]:
-        """Normalise the API envelope into a flat list of price items."""
-        if isinstance(payload, list):
-            return payload
-        if isinstance(payload, dict):
-            for key in ("results", "prices", "data", "items"):
-                if key in payload and isinstance(payload[key], list):
-                    return payload[key]
-            # Last resort: treat the dict itself as a single record
-            return [payload]
-        return []
+    def _parse_unified_response(self, payload: Any) -> list[dict[str, Any]]:
+        """Parse the unified-metrics API response into a flat price list."""
+        if not isinstance(payload, dict):
+            _LOGGER.warning(
+                "Unexpected Pstryk response type %s; expected dict", type(payload).__name__
+            )
+            return []
 
-    def _parse_record(self, record: dict[str, Any]) -> dict[str, Any] | None:
-        """Parse a single price record into a normalised dict, or None on error."""
-        if not isinstance(record, dict):
+        frames = payload.get("frames", [])
+        if not isinstance(frames, list):
+            _LOGGER.warning("'frames' field missing or not a list in Pstryk response")
+            return []
+
+        prices: list[dict[str, Any]] = []
+        for frame in frames:
+            record = self._parse_frame(frame)
+            if record is not None:
+                prices.append(record)
+
+        return prices
+
+    def _parse_frame(self, frame: Any) -> dict[str, Any] | None:
+        """Extract one price record from a single frame dict."""
+        if not isinstance(frame, dict):
             return None
 
-        # Timestamp
-        ts_raw: str | None = None
-        for field in self._TS_FIELDS:
-            if field in record and record[field]:
-                ts_raw = str(record[field])
-                break
-        if ts_raw is None:
-            _LOGGER.debug("Skipping price record with no timestamp: %s", record)
+        # ── Timestamp ──────────────────────────────────────────────────────
+        # Primary field is "start" per the documented example; fall back to
+        # other plausible names the API might use.
+        ts_raw: str | None = (
+            frame.get("start")
+            or frame.get("window_start")
+            or frame.get("datetime_from")
+            or frame.get("datetime")
+            or frame.get("timestamp")
+        )
+        if not ts_raw:
+            _LOGGER.debug("Skipping frame with no timestamp: %s", frame)
             return None
 
-        # Normalise timestamp to UTC ISO-8601
         try:
-            ts_raw = ts_raw.replace(" ", "T")
-            if not ts_raw.endswith("Z") and "+" not in ts_raw and ts_raw[-3] != ":":
+            ts_raw = str(ts_raw).strip().replace(" ", "T")
+            # Ensure the string is timezone-aware before parsing
+            if ts_raw.endswith("Z"):
+                pass  # already UTC
+            elif "+" not in ts_raw[-6:] and ts_raw[-3] != ":":
                 ts_raw += "Z"
-            # Validate by parsing (raises ValueError on bad format)
-            datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))
+            datetime.fromisoformat(ts_raw.replace("Z", "+00:00"))  # validate
         except ValueError:
-            _LOGGER.debug("Unparseable timestamp %r, skipping record", ts_raw)
+            _LOGGER.debug("Unparseable frame timestamp %r — skipping", ts_raw)
             return None
 
-        # Net price
-        price_net: float = 0.0
-        for field in self._PRICE_NET_FIELDS:
-            if field in record and record[field] is not None:
-                try:
-                    price_net = float(record[field])
-                    break
-                except (TypeError, ValueError):
-                    pass
+        # ── Pricing data ────────────────────────────────────────────────────
+        # Look first inside metrics.pricing (documented shape), then fall back
+        # to a flat layout where fields live directly on the frame.
+        pricing_src: dict[str, Any] = {}
+        metrics = frame.get("metrics")
+        if isinstance(metrics, dict):
+            candidate = metrics.get("pricing")
+            if isinstance(candidate, dict):
+                pricing_src = candidate
 
-        # Gross price (falls back to net when absent)
-        price_gross: float = price_net
-        for field in self._PRICE_GROSS_FIELDS:
-            if field in record and record[field] is not None:
-                try:
-                    price_gross = float(record[field])
-                    break
-                except (TypeError, ValueError):
-                    pass
+        if not pricing_src:
+            # Flat layout: the frame itself carries the price fields
+            pricing_src = frame
+
+        price_net = self._extract_price(pricing_src, self._PRICE_NET_FIELDS)
+        price_gross = self._extract_price(pricing_src, self._PRICE_GROSS_FIELDS)
+        if price_gross == 0.0:
+            # API may not expose a separate gross field; fall back to net
+            price_gross = price_net
 
         return {
             "timestamp": ts_raw,
             "price": price_net,
             "price_gross": price_gross,
         }
+
+    @staticmethod
+    def _extract_price(data: dict[str, Any], field_names: tuple[str, ...]) -> float:
+        """Return the first parseable float found under any of *field_names*."""
+        for field in field_names:
+            val = data.get(field)
+            if val is not None:
+                try:
+                    return float(val)
+                except (TypeError, ValueError):
+                    pass
+        return 0.0
