@@ -6,7 +6,7 @@ MANUFACTURER = "Pstryk UPS AI"
 VERSION = "1.0.0"
 
 # Platforms
-PLATFORMS = ["sensor", "switch"]
+PLATFORMS = ["sensor", "switch", "button"]
 
 # ── Configuration keys ──────────────────────────────────────────────────────
 CONF_PSTRYK_API_KEY = "pstryk_api_key"
@@ -76,6 +76,7 @@ SENSOR_BATTERY_LEVEL = "battery_level"
 SENSOR_DAILY_SAVINGS = "daily_savings"
 SENSOR_PSTRYK_STATUS = "pstryk_api_status"
 SENSOR_CLAUDE_STATUS = "claude_api_status"
+BUTTON_REFRESH_PRICES = "refresh_prices"
 SWITCH_CHARGING = "charging"
 SWITCH_DISCHARGING = "discharging"
 SWITCH_AUTO_SCHEDULE = "auto_schedule"

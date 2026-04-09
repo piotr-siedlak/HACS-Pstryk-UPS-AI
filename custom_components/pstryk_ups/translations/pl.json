@@ -177,6 +177,11 @@
       "auto_schedule": {
         "name": "Automatyczny harmonogram"
       }
+    },
+    "button": {
+      "refresh_prices": {
+        "name": "Odśwież ceny"
+      }
     }
   }
 }

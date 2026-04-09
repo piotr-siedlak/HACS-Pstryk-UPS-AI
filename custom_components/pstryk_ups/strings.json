@@ -177,6 +177,11 @@
       "auto_schedule": {
         "name": "Auto Schedule"
       }
+    },
+    "button": {
+      "refresh_prices": {
+        "name": "Refresh Prices"
+      }
     }
   }
 }
