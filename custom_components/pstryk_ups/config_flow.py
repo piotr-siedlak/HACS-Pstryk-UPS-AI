@@ -34,6 +34,7 @@ from .const import (
     CONF_MQTT_HISTORY_TOPIC,
     CONF_MQTT_POWER_TOPIC,
     CONF_NUM_STRINGS,
+    CONF_MQTT_REPEAT_INTERVAL,
     CONF_PSTRYK_API_KEY,
     CONF_REFRESH_INTERVAL,
     CONF_UPS_MODEL,
@@ -43,6 +44,7 @@ from .const import (
     DEFAULT_CLAUDE_PROMPT,
     DEFAULT_MAX_CHARGE_RATE,
     DEFAULT_MAX_DISCHARGE_RATE,
+    DEFAULT_MQTT_REPEAT_INTERVAL,
     DEFAULT_NUM_STRINGS,
     DEFAULT_REFRESH_INTERVAL,
     DEFAULT_UPS_MODEL,
@@ -113,6 +115,7 @@ def _mqtt_schema(
     discharge_topic: str = "",
     battery_topic: str = "",
     refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+    mqtt_repeat_interval: int = DEFAULT_MQTT_REPEAT_INTERVAL,
 ) -> vol.Schema:
     return vol.Schema(
         {
@@ -123,6 +126,9 @@ def _mqtt_schema(
             vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_MQTT_REPEAT_INTERVAL, default=mqtt_repeat_interval): NumberSelector(
+                NumberSelectorConfig(min=10, max=3600, step=10, unit_of_measurement="s", mode=NumberSelectorMode.BOX)
             ),
         }
     )
@@ -172,12 +178,13 @@ def _parse_ups_input(user_input: dict[str, Any]) -> dict[str, Any]:
 
 def _parse_mqtt_input(user_input: dict[str, Any]) -> dict[str, Any]:
     return {
-        CONF_MQTT_POWER_TOPIC: user_input[CONF_MQTT_POWER_TOPIC].strip(),
-        CONF_MQTT_HISTORY_TOPIC: user_input[CONF_MQTT_HISTORY_TOPIC].strip(),
-        CONF_MQTT_CHARGE_TOPIC: user_input[CONF_MQTT_CHARGE_TOPIC].strip(),
-        CONF_MQTT_DISCHARGE_TOPIC: user_input[CONF_MQTT_DISCHARGE_TOPIC].strip(),
+        CONF_MQTT_POWER_TOPIC: user_input.get(CONF_MQTT_POWER_TOPIC, "").strip(),
+        CONF_MQTT_HISTORY_TOPIC: user_input.get(CONF_MQTT_HISTORY_TOPIC, "").strip(),
+        CONF_MQTT_CHARGE_TOPIC: user_input.get(CONF_MQTT_CHARGE_TOPIC, "").strip(),
+        CONF_MQTT_DISCHARGE_TOPIC: user_input.get(CONF_MQTT_DISCHARGE_TOPIC, "").strip(),
         CONF_MQTT_BATTERY_TOPIC: user_input.get(CONF_MQTT_BATTERY_TOPIC, "").strip(),
         CONF_REFRESH_INTERVAL: int(user_input[CONF_REFRESH_INTERVAL]),
+        CONF_MQTT_REPEAT_INTERVAL: int(user_input.get(CONF_MQTT_REPEAT_INTERVAL, DEFAULT_MQTT_REPEAT_INTERVAL)),
     }
 
 
@@ -331,6 +338,7 @@ def _options_schema(
     discharge_topic: str = "",
     battery_topic: str = "",
     refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+    mqtt_repeat_interval: int = DEFAULT_MQTT_REPEAT_INTERVAL,
     claude_prompt: str = DEFAULT_CLAUDE_PROMPT,
 ) -> vol.Schema:
     """Combined schema for the single-page options flow."""
@@ -364,6 +372,9 @@ def _options_schema(
             vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_MQTT_REPEAT_INTERVAL, default=mqtt_repeat_interval): NumberSelector(
+                NumberSelectorConfig(min=10, max=3600, step=10, unit_of_measurement="s", mode=NumberSelectorMode.BOX)
             ),
             # ── Claude prompt ────────────────────────────────────────────────
             vol.Required(CONF_CLAUDE_PROMPT, default=claude_prompt): TextSelector(
@@ -417,6 +428,7 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
                 discharge_topic=current.get(CONF_MQTT_DISCHARGE_TOPIC, ""),
                 battery_topic=current.get(CONF_MQTT_BATTERY_TOPIC, ""),
                 refresh_interval=current.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
+                mqtt_repeat_interval=current.get(CONF_MQTT_REPEAT_INTERVAL, DEFAULT_MQTT_REPEAT_INTERVAL),
                 claude_prompt=current.get(CONF_CLAUDE_PROMPT, DEFAULT_CLAUDE_PROMPT),
             ),
             errors=errors,

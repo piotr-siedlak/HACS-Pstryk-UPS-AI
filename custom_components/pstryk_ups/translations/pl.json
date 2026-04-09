@@ -44,7 +44,8 @@
           "mqtt_charge_topic": "Temat sterowania ładowaniem UPS",
           "mqtt_discharge_topic": "Temat sterowania rozładowywaniem UPS",
           "mqtt_battery_topic": "Temat poziomu naładowania baterii (%)",
-          "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
+          "refresh_interval_hours": "Interwał odświeżania cen (godziny)",
+          "mqtt_repeat_interval_seconds": "Interwał powtarzania MQTT (sekundy)"
         },
         "data_description": {
           "mqtt_power_topic": "Temat MQTT publikujący bieżący pobór mocy w kW. Obsługuje ładunek numeryczny lub JSON.",
@@ -52,7 +53,8 @@
           "mqtt_charge_topic": "Temat MQTT, do którego publikowane jest '1' (start ładowania) lub '0' (stop ładowania).",
           "mqtt_discharge_topic": "Temat MQTT, do którego publikowane jest '1' (start rozładowywania) lub '0' (stop rozładowywania).",
           "mqtt_battery_topic": "Temat MQTT publikujący poziom naładowania akumulatora w procentach.",
-          "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk."
+          "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk.",
+          "mqtt_repeat_interval_seconds": "Jak często (w sekundach) aktualny stan ładowania/rozładowywania jest ponownie publikowany na MQTT. Zapewnia resynchronizację UPS po restarcie lub utracie wiadomości."
         }
       },
       "reconfigure": {
@@ -96,6 +98,7 @@
           "mqtt_discharge_topic": "Temat sterowania rozładowywaniem UPS",
           "mqtt_battery_topic": "Temat poziomu naładowania baterii (%)",
           "refresh_interval_hours": "Interwał odświeżania cen (godziny)",
+          "mqtt_repeat_interval_seconds": "Interwał powtarzania MQTT (sekundy)",
           "claude_prompt": "Prompt dla Claude AI"
         },
         "data_description": {
@@ -112,6 +115,7 @@
           "mqtt_discharge_topic": "Temat MQTT, do którego publikowane jest '1' (start rozładowywania) lub '0' (stop rozładowywania).",
           "mqtt_battery_topic": "Temat MQTT publikujący poziom naładowania akumulatora w procentach.",
           "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk.",
+          "mqtt_repeat_interval_seconds": "Jak często (w sekundach) aktualny stan ładowania/rozładowywania jest ponownie publikowany na MQTT. Zapewnia resynchronizację UPS po restarcie lub utracie wiadomości.",
           "claude_prompt": "Pełny szablon prompta wysyłanego do Claude. Używa zmiennych {variable} wypełnianych w czasie działania: {ups_model}, {capacity_kwh}, {num_strings}, {max_charge}, {max_discharge}, {current_battery_pct}, {battery_min_pct}, {battery_max_pct}, {price_table}, {current_power_kw}, {history_summary}. Użyj {{ i }} dla dosłownych nawiasów."
         }
       }
@@ -167,6 +171,12 @@
           "error": "Błąd",
           "unknown": "Nieznany"
         }
+      },
+      "last_pstryk_request": {
+        "name": "Ostatnie żądanie API Pstryk"
+      },
+      "last_claude_prompt": {
+        "name": "Ostatni prompt Claude"
       }
     },
     "switch": {

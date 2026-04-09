@@ -44,7 +44,8 @@
           "mqtt_charge_topic": "UPS Charge Control Topic",
           "mqtt_discharge_topic": "UPS Discharge Control Topic",
           "mqtt_battery_topic": "Battery Level Topic (%)",
-          "refresh_interval_hours": "Price Refresh Interval (hours)"
+          "refresh_interval_hours": "Price Refresh Interval (hours)",
+          "mqtt_repeat_interval_seconds": "MQTT Repeat Interval (seconds)"
         },
         "data_description": {
           "mqtt_power_topic": "MQTT topic publishing current power draw in kW. Accepts plain numeric or JSON payload.",
@@ -52,7 +53,8 @@
           "mqtt_charge_topic": "MQTT topic to which '1' (start charging) or '0' (stop charging) is published.",
           "mqtt_discharge_topic": "MQTT topic to which '1' (start discharging) or '0' (stop discharging) is published.",
           "mqtt_battery_topic": "MQTT topic publishing battery state of charge in percent.",
-          "refresh_interval_hours": "How often (in hours) to fetch new electricity prices from Pstryk."
+          "refresh_interval_hours": "How often (in hours) to fetch new electricity prices from Pstryk.",
+          "mqtt_repeat_interval_seconds": "How often (in seconds) the current charge/discharge state is re-published to MQTT. Ensures the UPS resyncs after a restart or missed message. Set to 0 to disable."
         }
       },
       "reconfigure": {
@@ -96,6 +98,7 @@
           "mqtt_discharge_topic": "UPS Discharge Control Topic",
           "mqtt_battery_topic": "Battery Level Topic (%)",
           "refresh_interval_hours": "Price Refresh Interval (hours)",
+          "mqtt_repeat_interval_seconds": "MQTT Repeat Interval (seconds)",
           "claude_prompt": "Claude AI Prompt"
         },
         "data_description": {
@@ -112,6 +115,7 @@
           "mqtt_discharge_topic": "MQTT topic to which '1' (start discharging) or '0' (stop discharging) is published.",
           "mqtt_battery_topic": "MQTT topic publishing battery state of charge in percent.",
           "refresh_interval_hours": "How often (in hours) to fetch new electricity prices from Pstryk.",
+          "mqtt_repeat_interval_seconds": "How often (in seconds) the current charge/discharge state is re-published to MQTT. Ensures the UPS resyncs after a restart or missed message.",
           "claude_prompt": "Full prompt template sent to Claude. Uses {variable} placeholders filled at runtime: {ups_model}, {capacity_kwh}, {num_strings}, {max_charge}, {max_discharge}, {current_battery_pct}, {battery_min_pct}, {battery_max_pct}, {price_table}, {current_power_kw}, {history_summary}. Use {{ and }} for literal braces."
         }
       }
@@ -167,6 +171,12 @@
           "error": "Error",
           "unknown": "Unknown"
         }
+      },
+      "last_pstryk_request": {
+        "name": "Last Pstryk API Request URL"
+      },
+      "last_claude_prompt": {
+        "name": "Last Claude Prompt"
       }
     },
     "switch": {

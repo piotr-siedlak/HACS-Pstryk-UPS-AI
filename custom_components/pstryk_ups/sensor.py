@@ -33,6 +33,8 @@ from .const import (
     SENSOR_CURRENT_POWER,
     SENSOR_CURRENT_PRICE,
     SENSOR_DAILY_SAVINGS,
+    SENSOR_LAST_CLAUDE_PROMPT,
+    SENSOR_LAST_PSTRYK_REQUEST,
     SENSOR_NEXT_CHARGE,
     SENSOR_NEXT_DISCHARGE,
     SENSOR_PSTRYK_STATUS,
@@ -67,6 +69,8 @@ async def async_setup_entry(
             DailySavingsSensor(coordinator, entry),
             PstrykAPIStatusSensor(coordinator, entry),
             ClaudeAPIStatusSensor(coordinator, entry),
+            LastPstrykRequestSensor(coordinator, entry),
+            LastClaudePromptSensor(coordinator, entry),
         ]
     )
 
@@ -386,4 +390,52 @@ class ClaudeAPIStatusSensor(PstrykUPSSensor):
             "last_error": data.get("claude_api_last_error"),
             "schedule_source": data.get("claude_schedule_source", "unknown"),
             "last_prompt": data.get("claude_last_prompt", ""),
+        }
+
+
+class LastPstrykRequestSensor(PstrykUPSSensor):
+    """Shows the last Pstryk API request URL (useful for debugging)."""
+
+    _attr_translation_key = "last_pstryk_request"
+    _attr_icon = "mdi:web"
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_LAST_PSTRYK_REQUEST)
+
+    @property
+    def native_value(self) -> str:
+        url: str = self._coordinator_data.get("pstryk_api_last_request", "")
+        # HA limits sensor state to 255 chars
+        return url[:255] if url else "none"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        url: str = self._coordinator_data.get("pstryk_api_last_request", "")
+        return {"full_url": url}
+
+
+class LastClaudePromptSensor(PstrykUPSSensor):
+    """Shows a summary of the last Claude AI prompt and stores the full text as attribute."""
+
+    _attr_translation_key = "last_claude_prompt"
+    _attr_icon = "mdi:text-box-outline"
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_LAST_CLAUDE_PROMPT)
+
+    @property
+    def native_value(self) -> str:
+        prompt: str = self._coordinator_data.get("claude_last_prompt", "")
+        if not prompt:
+            return "none"
+        lines = prompt.count("\n") + 1
+        return f"{len(prompt)} chars / {lines} lines"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        prompt: str = self._coordinator_data.get("claude_last_prompt", "")
+        request: str = self._coordinator_data.get("claude_last_request", "")
+        return {
+            "full_prompt": prompt,
+            "last_request_info": request,
         }

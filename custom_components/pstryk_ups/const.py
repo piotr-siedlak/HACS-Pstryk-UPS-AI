@@ -24,10 +24,12 @@ CONF_MQTT_CHARGE_TOPIC = "mqtt_charge_topic"
 CONF_MQTT_DISCHARGE_TOPIC = "mqtt_discharge_topic"
 CONF_MQTT_BATTERY_TOPIC = "mqtt_battery_topic"
 CONF_REFRESH_INTERVAL = "refresh_interval_hours"
+CONF_MQTT_REPEAT_INTERVAL = "mqtt_repeat_interval_seconds"
 CONF_CLAUDE_PROMPT = "claude_prompt"
 
 # ── Defaults ─────────────────────────────────────────────────────────────────
 DEFAULT_REFRESH_INTERVAL = 6          # hours between Pstryk API calls
+DEFAULT_MQTT_REPEAT_INTERVAL = 30     # seconds between periodic MQTT republish
 DEFAULT_BATTERY_CAPACITY = 10.0       # kWh
 DEFAULT_NUM_STRINGS = 1
 DEFAULT_MAX_CHARGE_RATE = 2.0         # kW
@@ -77,6 +79,8 @@ SENSOR_BATTERY_LEVEL = "battery_level"
 SENSOR_DAILY_SAVINGS = "daily_savings"
 SENSOR_PSTRYK_STATUS = "pstryk_api_status"
 SENSOR_CLAUDE_STATUS = "claude_api_status"
+SENSOR_LAST_PSTRYK_REQUEST = "last_pstryk_request"
+SENSOR_LAST_CLAUDE_PROMPT = "last_claude_prompt"
 BUTTON_REFRESH_PRICES = "refresh_prices"
 SWITCH_CHARGING = "charging"
 SWITCH_DISCHARGING = "discharging"

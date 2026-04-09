@@ -31,12 +31,14 @@ from .const import (
     CONF_MQTT_DISCHARGE_TOPIC,
     CONF_MQTT_HISTORY_TOPIC,
     CONF_MQTT_POWER_TOPIC,
+    CONF_MQTT_REPEAT_INTERVAL,
     CONF_NUM_STRINGS,
     CONF_PSTRYK_API_KEY,
     CONF_REFRESH_INTERVAL,
     CONF_UPS_MODEL,
     DEFAULT_BATTERY_MAX_PCT,
     DEFAULT_BATTERY_MIN_PCT,
+    DEFAULT_MQTT_REPEAT_INTERVAL,
     DEFAULT_REFRESH_INTERVAL,
     DOMAIN,
     MQTT_PAYLOAD_OFF,
@@ -124,6 +126,12 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # MQTT subscription cancel callbacks
         self._mqtt_unsubs: list[Any] = []
 
+        # Periodic MQTT republish task
+        self._mqtt_repeat_interval: int = self.config.get(
+            CONF_MQTT_REPEAT_INTERVAL, DEFAULT_MQTT_REPEAT_INTERVAL
+        )
+        self._mqtt_repeat_task: asyncio.Task | None = None
+
         # Build sub-clients
         session = async_get_clientsession(hass)
         self._pstryk = PstrykAPIClient(
@@ -197,8 +205,47 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             self.mqtt_status = "no_topics"
             _LOGGER.info("MQTT available but no topics configured — UPS control disabled")
 
+        # Start periodic republish task if any control topics are configured
+        charge_topic: str = self.config.get(CONF_MQTT_CHARGE_TOPIC, "")
+        discharge_topic: str = self.config.get(CONF_MQTT_DISCHARGE_TOPIC, "")
+        if charge_topic or discharge_topic:
+            self._start_mqtt_repeat_task()
+
+    def _start_mqtt_repeat_task(self) -> None:
+        """Start (or restart) the periodic MQTT republish background task."""
+        self._stop_mqtt_repeat_task()
+        self._mqtt_repeat_task = self.hass.async_create_background_task(
+            self._mqtt_repeat_loop(),
+            name=f"{DOMAIN}_mqtt_repeat",
+        )
+        _LOGGER.debug(
+            "MQTT repeat task started (interval=%ds)", self._mqtt_repeat_interval
+        )
+
+    def _stop_mqtt_repeat_task(self) -> None:
+        """Cancel the periodic MQTT republish task if running."""
+        if self._mqtt_repeat_task and not self._mqtt_repeat_task.done():
+            self._mqtt_repeat_task.cancel()
+        self._mqtt_repeat_task = None
+
+    async def _mqtt_repeat_loop(self) -> None:
+        """Periodically republish the current charge/discharge state to MQTT."""
+        try:
+            while True:
+                await asyncio.sleep(self._mqtt_repeat_interval)
+                if self._mqtt_available():
+                    await self._publish_charge_command(self.charging_enabled)
+                    await self._publish_discharge_command(self.discharging_enabled)
+                    _LOGGER.debug(
+                        "MQTT repeat: charge=%s discharge=%s",
+                        self.charging_enabled, self.discharging_enabled,
+                    )
+        except asyncio.CancelledError:
+            pass
+
     async def async_unload(self) -> None:
-        """Cancel all MQTT subscriptions. Call during unload."""
+        """Cancel all MQTT subscriptions and background tasks. Call during unload."""
+        self._stop_mqtt_repeat_task()
         for unsub in self._mqtt_unsubs:
             unsub()
         self._mqtt_unsubs.clear()

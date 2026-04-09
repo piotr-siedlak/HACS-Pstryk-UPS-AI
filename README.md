@@ -16,8 +16,11 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 - **MQTT integration (optional)** — subscribes to configurable topics for real-time power draw, historical consumption, and battery state of charge; publishes `1`/`0` commands to separate charge and discharge control topics. All MQTT topics are optional — the integration works for price fetching and scheduling without them
 - **Real-time MQTT sensor updates** — sensor values update instantly on every incoming MQTT message, not just on the hourly coordinator cycle
 - **API status monitoring** — dedicated sensors show whether the Pstryk and Claude APIs are reachable, with last request URL, last-success timestamp, last error, last prompt sent, and MQTT connection status
-- **9 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk API status, Claude API status
+- **Dedicated API URL and prompt sensors** — `Last Pstryk API Request URL` and `Last Claude Prompt` are standalone sensors visible directly in the HA dashboard, not buried in attributes
+- **Periodic MQTT heartbeat** — charge/discharge state is re-published to MQTT every N seconds (configurable, default 30 s), so the UPS resyncs automatically after a power cycle or missed message
+- **11 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk API status, Claude API status, last Pstryk request URL, last Claude prompt
 - **3 switch entities** — manual charging toggle, manual discharging toggle, auto-schedule enable/disable
+- **Configurable MQTT repeat interval** — set how often (in seconds) the charge/discharge commands are re-sent; adjustable from 10 s to 3600 s in the Configure panel
 - **1 button entity** — manual price refresh that immediately fetches fresh Pstryk prices and regenerates the schedule, without affecting the automatic hourly cron
 - **Single-page Configure panel** — update all UPS parameters, MQTT topics, and the Claude prompt together on one screen; changes take effect immediately after saving
 - **Reconfigure support** — update API keys independently without touching UPS or MQTT settings
@@ -100,6 +103,7 @@ All MQTT topic fields are **optional**. Leave them empty to skip and configure l
 | UPS Discharge Control Topic | MQTT topic that receives `1`/`0` discharge commands |
 | Battery Level Topic | MQTT topic publishing battery state of charge in % |
 | Price Refresh Interval | How often (in hours) to fetch new prices from Pstryk (default: 6) |
+| MQTT Repeat Interval | How often (in seconds) to re-publish the current charge/discharge state to MQTT (default: 30) |
 
 ### Changing settings after setup
 
@@ -161,6 +165,7 @@ Or JSON:
 The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — whenever:
 - The auto-schedule activates or deactivates charging/discharging for the current hour
 - The user toggles the **UPS Charging** or **UPS Discharging** switch manually
+- The MQTT repeat interval elapses (default: every 30 seconds — heartbeat to keep the UPS in sync)
 
 ---
 
@@ -179,6 +184,8 @@ The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — 
 | `sensor.pstryk_ups_estimated_daily_savings` | Estimated PLN saved today vs always-idle | PLN | `scheduled_charge_hours`, `scheduled_discharge_hours` |
 | `sensor.pstryk_ups_pstryk_api_status` | Pstryk API reachability | ok / error / unknown | `last_request`, `last_success`, `last_error`, `last_checked`, `next_day_prices_available`, `mqtt_status`, `mqtt_power_topic`, `mqtt_last_power_update`, `mqtt_history_topic`, `mqtt_last_history_update`, `mqtt_charge_topic`, `mqtt_discharge_topic`, `mqtt_battery_topic`, `mqtt_last_battery_update` |
 | `sensor.pstryk_ups_claude_api_status` | Claude AI API status and schedule source | ok / error / unknown | `last_request`, `last_success`, `last_error`, `schedule_source` (claude / heuristic), `last_prompt` |
+| `sensor.pstryk_ups_last_pstryk_api_request_url` | Last Pstryk API request URL (max 255 chars) | — | `full_url` (complete URL) |
+| `sensor.pstryk_ups_last_claude_prompt` | Summary of the last Claude prompt (char count / line count) | — | `full_prompt` (complete prompt text), `last_request_info` |
 
 ### Switches
 
@@ -240,7 +247,10 @@ The prompt uses Python `str.format()` placeholders filled at runtime:
 
 Use `{{` and `}}` for literal braces in JSON examples within your prompt. If the custom prompt contains an invalid placeholder, the integration automatically falls back to the built-in default.
 
-The last prompt actually sent to Claude is visible at any time in `sensor.pstryk_ups_claude_api_status` → `last_prompt` attribute.
+The last prompt actually sent to Claude is visible in two ways:
+- As the state of `sensor.pstryk_ups_last_claude_prompt` (shows character and line count)
+- As the `full_prompt` attribute of the same sensor (complete prompt text)
+- Also in `sensor.pstryk_ups_claude_api_status` → `last_prompt` attribute
 
 ---
 
@@ -263,6 +273,8 @@ entities:
   - entity: sensor.pstryk_ups_estimated_daily_savings
   - entity: sensor.pstryk_ups_pstryk_api_status
   - entity: sensor.pstryk_ups_claude_api_status
+  - entity: sensor.pstryk_ups_last_pstryk_api_request_url
+  - entity: sensor.pstryk_ups_last_claude_prompt
   - entity: button.pstryk_ups_refresh_prices
 ```
 
@@ -318,7 +330,11 @@ logger:
 
 ## Changelog
 
-### v1.10.x
+### v1.10.5
+- **Dedicated API URL and prompt sensors**: Added `sensor.pstryk_ups_last_pstryk_api_request_url` (state = last URL called, attribute `full_url`) and `sensor.pstryk_ups_last_claude_prompt` (state = char/line count, attribute `full_prompt` = complete prompt text). These are now visible directly in the HA dashboard without digging into attributes
+- **Periodic MQTT heartbeat**: Charge/discharge state is now re-published to MQTT every N seconds (default 30 s, configurable 10–3600 s from Configure panel). Ensures UPS stays in sync after power cycles or missed messages without waiting for the next schedule change
+
+### v1.10.4
 - **Last API request visibility**: `sensor.pstryk_ups_pstryk_api_status` now shows the exact URL sent to the Pstryk API in `last_request`; `sensor.pstryk_ups_claude_api_status` shows the Anthropic API call summary in `last_request` and the full rendered prompt in `last_prompt`
 - **Real-time MQTT sensor updates**: Fixed sensors updating only on the hourly cycle — values now update instantly on every incoming MQTT message
 - **MQTT last-update timestamps**: Each MQTT data topic has a `mqtt_last_power_update`, `mqtt_last_history_update`, `mqtt_last_battery_update` timestamp visible in sensor attributes
