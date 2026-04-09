@@ -15,6 +15,7 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 - **API status monitoring** — dedicated sensors show whether the Pstryk and Claude APIs are reachable, with last-success timestamp, last error message, and schedule source (claude/heuristic)
 - **9 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk API status, Claude API status
 - **3 switch entities** — manual charging toggle, manual discharging toggle, auto-schedule enable/disable
+- **1 button entity** — manual price refresh that immediately fetches fresh Pstryk prices and regenerates the schedule, without affecting the automatic hourly cron
 - **Single-page Configure panel** — update all UPS parameters and MQTT topics together on one screen via the **Configure** button, no need to remove the integration
 - **Reconfigure support** — update API keys independently without touching UPS or MQTT settings
 - **English and Polish translations**
@@ -188,6 +189,12 @@ The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — 
 | `switch.pstryk_ups_ups_discharging` | Enable/disable UPS discharging — publishes `1`/`0` to the discharge control topic |
 | `switch.pstryk_ups_auto_schedule` | Enable/disable AI-driven automatic scheduling |
 
+### Buttons
+
+| Entity ID | Description |
+|---|---|
+| `button.pstryk_ups_refresh_prices` | Immediately fetches fresh prices from the Pstryk API and regenerates the charge/discharge schedule. Bypasses the configured refresh interval TTL. The automatic hourly schedule is unaffected. |
+
 ---
 
 ## How the AI Scheduling Works
@@ -230,6 +237,7 @@ entities:
   - entity: sensor.pstryk_ups_estimated_daily_savings
   - entity: sensor.pstryk_ups_pstryk_api_status
   - entity: sensor.pstryk_ups_claude_api_status
+  - entity: button.pstryk_ups_refresh_prices
 ```
 
 To show the full 24-hour schedule, use a **Markdown** card:
@@ -279,6 +287,9 @@ logger:
 ---
 
 ## Changelog
+
+### v1.6.0
+- **Manual refresh button**: Added `button.pstryk_ups_refresh_prices` — press to immediately fetch fresh Pstryk prices and regenerate the schedule without waiting for the next hourly cycle
 
 ### v1.5.0
 - **Price field**: Changed to `total_cost` as the primary price field — includes energy, distribution, fees, and taxes — so scheduling reflects the actual price you pay, not just the raw TGE spot price
