@@ -7,8 +7,8 @@ from typing import Any
 import aiohttp
 import voluptuous as vol
 
-from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
-from homeassistant.core import HomeAssistant
+from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.selector import (
     NumberSelector,
@@ -45,51 +45,73 @@ from .pstryk_api import PstrykAPIClient, PstrykAuthError
 
 _LOGGER = logging.getLogger(__name__)
 
-# ── Shared schema fragments ──────────────────────────────────────────────────
 
-_STEP_API_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_PSTRYK_API_KEY): TextSelector(
-            TextSelectorConfig(type=TextSelectorType.PASSWORD)
-        ),
-        vol.Required(CONF_CLAUDE_API_KEY): TextSelector(
-            TextSelectorConfig(type=TextSelectorType.PASSWORD)
-        ),
-    }
-)
+# ── Schema builders ──────────────────────────────────────────────────────────
+# Built as functions so that current values can be injected as defaults.
 
-_STEP_UPS_SCHEMA = vol.Schema(
-    {
-        vol.Optional(CONF_UPS_MODEL, default=DEFAULT_UPS_MODEL): str,
-        vol.Required(CONF_BATTERY_CAPACITY, default=DEFAULT_BATTERY_CAPACITY): NumberSelector(
-            NumberSelectorConfig(min=0.5, max=1000.0, step=0.5, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
-        ),
-        vol.Required(CONF_NUM_STRINGS, default=DEFAULT_NUM_STRINGS): NumberSelector(
-            NumberSelectorConfig(min=1, max=100, step=1, mode=NumberSelectorMode.BOX)
-        ),
-        vol.Required(CONF_MAX_CHARGE_RATE, default=DEFAULT_MAX_CHARGE_RATE): NumberSelector(
-            NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
-        ),
-        vol.Required(CONF_MAX_DISCHARGE_RATE, default=DEFAULT_MAX_DISCHARGE_RATE): NumberSelector(
-            NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
-        ),
-    }
-)
-
-_STEP_MQTT_SCHEMA = vol.Schema(
-    {
-        vol.Required(CONF_MQTT_POWER_TOPIC): str,
-        vol.Required(CONF_MQTT_HISTORY_TOPIC): str,
-        vol.Required(CONF_MQTT_CONTROL_TOPIC): str,
-        vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=""): str,
-        vol.Required(CONF_REFRESH_INTERVAL, default=DEFAULT_REFRESH_INTERVAL): NumberSelector(
-            NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
-        ),
-    }
-)
+def _api_schema(
+    pstryk_default: str = "",
+    claude_default: str = "",
+) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_PSTRYK_API_KEY, default=pstryk_default): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
+            vol.Required(CONF_CLAUDE_API_KEY, default=claude_default): TextSelector(
+                TextSelectorConfig(type=TextSelectorType.PASSWORD)
+            ),
+        }
+    )
 
 
-# ── Helper ───────────────────────────────────────────────────────────────────
+def _ups_schema(
+    ups_model: str = DEFAULT_UPS_MODEL,
+    battery_capacity: float = DEFAULT_BATTERY_CAPACITY,
+    num_strings: int = DEFAULT_NUM_STRINGS,
+    max_charge_rate: float = DEFAULT_MAX_CHARGE_RATE,
+    max_discharge_rate: float = DEFAULT_MAX_DISCHARGE_RATE,
+) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Optional(CONF_UPS_MODEL, default=ups_model): str,
+            vol.Required(CONF_BATTERY_CAPACITY, default=battery_capacity): NumberSelector(
+                NumberSelectorConfig(min=0.5, max=1000.0, step=0.5, unit_of_measurement="kWh", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_NUM_STRINGS, default=num_strings): NumberSelector(
+                NumberSelectorConfig(min=1, max=100, step=1, mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_MAX_CHARGE_RATE, default=max_charge_rate): NumberSelector(
+                NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
+            ),
+            vol.Required(CONF_MAX_DISCHARGE_RATE, default=max_discharge_rate): NumberSelector(
+                NumberSelectorConfig(min=0.1, max=100.0, step=0.1, unit_of_measurement="kW", mode=NumberSelectorMode.BOX)
+            ),
+        }
+    )
+
+
+def _mqtt_schema(
+    power_topic: str = "",
+    history_topic: str = "",
+    control_topic: str = "",
+    battery_topic: str = "",
+    refresh_interval: int = DEFAULT_REFRESH_INTERVAL,
+) -> vol.Schema:
+    return vol.Schema(
+        {
+            vol.Required(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
+            vol.Required(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
+            vol.Required(CONF_MQTT_CONTROL_TOPIC, default=control_topic): str,
+            vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
+            vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
+                NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
+            ),
+        }
+    )
+
+
+# ── Validation helper ────────────────────────────────────────────────────────
 
 async def _validate_api_keys(
     hass: HomeAssistant,
@@ -111,7 +133,6 @@ async def _validate_api_keys(
         errors[CONF_PSTRYK_API_KEY] = "cannot_connect"
 
     if CONF_PSTRYK_API_KEY not in errors:
-        # Only validate Claude key when Pstryk is fine (avoid double-fail UX)
         claude_planner = ClaudePlanner(api_key=claude_key, ups_config={})
         valid = await claude_planner.async_validate_key()
         if not valid:
@@ -120,7 +141,27 @@ async def _validate_api_keys(
     return errors
 
 
-# ── Config flow ───────────────────────────────────────────────────────────────
+def _parse_ups_input(user_input: dict[str, Any]) -> dict[str, Any]:
+    return {
+        CONF_UPS_MODEL: user_input.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL),
+        CONF_BATTERY_CAPACITY: float(user_input[CONF_BATTERY_CAPACITY]),
+        CONF_NUM_STRINGS: int(user_input[CONF_NUM_STRINGS]),
+        CONF_MAX_CHARGE_RATE: float(user_input[CONF_MAX_CHARGE_RATE]),
+        CONF_MAX_DISCHARGE_RATE: float(user_input[CONF_MAX_DISCHARGE_RATE]),
+    }
+
+
+def _parse_mqtt_input(user_input: dict[str, Any]) -> dict[str, Any]:
+    return {
+        CONF_MQTT_POWER_TOPIC: user_input[CONF_MQTT_POWER_TOPIC].strip(),
+        CONF_MQTT_HISTORY_TOPIC: user_input[CONF_MQTT_HISTORY_TOPIC].strip(),
+        CONF_MQTT_CONTROL_TOPIC: user_input[CONF_MQTT_CONTROL_TOPIC].strip(),
+        CONF_MQTT_BATTERY_TOPIC: user_input.get(CONF_MQTT_BATTERY_TOPIC, "").strip(),
+        CONF_REFRESH_INTERVAL: int(user_input[CONF_REFRESH_INTERVAL]),
+    }
+
+
+# ── Main config flow ─────────────────────────────────────────────────────────
 
 class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
     """Three-step config flow: API keys → UPS params → MQTT & scheduling."""
@@ -129,6 +170,12 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
     def __init__(self) -> None:
         self._data: dict[str, Any] = {}
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(config_entry: ConfigEntry) -> PstrykUPSOptionsFlowHandler:
+        """Return the options flow handler for changing topics and UPS params."""
+        return PstrykUPSOptionsFlowHandler()
 
     # ── Step 1: API keys ─────────────────────────────────────────────────────
 
@@ -151,16 +198,13 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if not errors:
                 self._data.update(
-                    {
-                        CONF_PSTRYK_API_KEY: pstryk_key,
-                        CONF_CLAUDE_API_KEY: claude_key,
-                    }
+                    {CONF_PSTRYK_API_KEY: pstryk_key, CONF_CLAUDE_API_KEY: claude_key}
                 )
                 return await self.async_step_ups_config()
 
         return self.async_show_form(
             step_id="user",
-            data_schema=_STEP_API_SCHEMA,
+            data_schema=_api_schema(),
             errors=errors,
         )
 
@@ -170,23 +214,15 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
-            self._data.update(
-                {
-                    CONF_UPS_MODEL: user_input.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL),
-                    CONF_BATTERY_CAPACITY: float(user_input[CONF_BATTERY_CAPACITY]),
-                    CONF_NUM_STRINGS: int(user_input[CONF_NUM_STRINGS]),
-                    CONF_MAX_CHARGE_RATE: float(user_input[CONF_MAX_CHARGE_RATE]),
-                    CONF_MAX_DISCHARGE_RATE: float(user_input[CONF_MAX_DISCHARGE_RATE]),
-                }
-            )
+            self._data.update(_parse_ups_input(user_input))
             return await self.async_step_mqtt_schedule()
 
         return self.async_show_form(
             step_id="ups_config",
-            data_schema=_STEP_UPS_SCHEMA,
+            data_schema=_ups_schema(),
         )
 
-    # ── Step 3: MQTT topics & scheduling ────────────────────────────────────
+    # ── Step 3: MQTT topics & scheduling ─────────────────────────────────────
 
     async def async_step_mqtt_schedule(
         self, user_input: dict[str, Any] | None = None
@@ -194,27 +230,16 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
         errors: dict[str, str] = {}
 
         if user_input is not None:
-            power_topic = user_input[CONF_MQTT_POWER_TOPIC].strip()
-            history_topic = user_input[CONF_MQTT_HISTORY_TOPIC].strip()
-            control_topic = user_input[CONF_MQTT_CONTROL_TOPIC].strip()
-
-            if not power_topic:
+            parsed = _parse_mqtt_input(user_input)
+            if not parsed[CONF_MQTT_POWER_TOPIC]:
                 errors[CONF_MQTT_POWER_TOPIC] = "required"
-            if not history_topic:
+            if not parsed[CONF_MQTT_HISTORY_TOPIC]:
                 errors[CONF_MQTT_HISTORY_TOPIC] = "required"
-            if not control_topic:
+            if not parsed[CONF_MQTT_CONTROL_TOPIC]:
                 errors[CONF_MQTT_CONTROL_TOPIC] = "required"
 
             if not errors:
-                self._data.update(
-                    {
-                        CONF_MQTT_POWER_TOPIC: power_topic,
-                        CONF_MQTT_HISTORY_TOPIC: history_topic,
-                        CONF_MQTT_CONTROL_TOPIC: control_topic,
-                        CONF_MQTT_BATTERY_TOPIC: user_input.get(CONF_MQTT_BATTERY_TOPIC, "").strip(),
-                        CONF_REFRESH_INTERVAL: int(user_input[CONF_REFRESH_INTERVAL]),
-                    }
-                )
+                self._data.update(parsed)
                 ups_model: str = self._data.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL)
                 return self.async_create_entry(
                     title=f"Pstryk UPS ({ups_model})",
@@ -223,59 +248,126 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
         return self.async_show_form(
             step_id="mqtt_schedule",
-            data_schema=_STEP_MQTT_SCHEMA,
+            data_schema=_mqtt_schema(),
             errors=errors,
         )
 
-    # ── Reconfigure (edit existing entry) ───────────────────────────────────
+    # ── Reconfigure: update API keys (keeps UPS/MQTT settings intact) ────────
 
     async def async_step_reconfigure(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Allow editing all settings without removing the integration."""
+        """Allow updating API keys without removing the integration."""
         entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
         if entry is None:
             return self.async_abort(reason="entry_not_found")
 
-        # Pre-populate with existing values
-        self._data = dict(entry.data)
+        errors: dict[str, str] = {}
 
         if user_input is not None:
-            # Re-run as a fresh user step but update in place
-            return await self.async_step_user(user_input)
+            pstryk_key = user_input[CONF_PSTRYK_API_KEY].strip()
+            claude_key = user_input[CONF_CLAUDE_API_KEY].strip()
 
-        existing_schema = vol.Schema(
-            {
-                vol.Required(
-                    CONF_PSTRYK_API_KEY,
-                    default=entry.data.get(CONF_PSTRYK_API_KEY, ""),
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-                vol.Required(
-                    CONF_CLAUDE_API_KEY,
-                    default=entry.data.get(CONF_CLAUDE_API_KEY, ""),
-                ): TextSelector(TextSelectorConfig(type=TextSelectorType.PASSWORD)),
-            }
-        )
+            if not pstryk_key:
+                errors[CONF_PSTRYK_API_KEY] = "required"
+            if not claude_key:
+                errors[CONF_CLAUDE_API_KEY] = "required"
+
+            if not errors:
+                errors = await _validate_api_keys(self.hass, pstryk_key, claude_key)
+
+            if not errors:
+                updated_data = {
+                    **entry.data,
+                    CONF_PSTRYK_API_KEY: pstryk_key,
+                    CONF_CLAUDE_API_KEY: claude_key,
+                }
+                return self.async_update_reload_and_abort(
+                    entry,
+                    data=updated_data,
+                    reason="reconfigure_successful",
+                )
+
         return self.async_show_form(
             step_id="reconfigure",
-            data_schema=existing_schema,
+            data_schema=_api_schema(
+                pstryk_default=entry.data.get(CONF_PSTRYK_API_KEY, ""),
+                claude_default=entry.data.get(CONF_CLAUDE_API_KEY, ""),
+            ),
+            errors=errors,
         )
 
-    async def async_step_reconfigure_confirm(
+
+# ── Options flow ─────────────────────────────────────────────────────────────
+
+class PstrykUPSOptionsFlowHandler(OptionsFlow):
+    """Options flow: change UPS params and all MQTT topics without re-adding.
+
+    Accessible via Settings → Devices & Services → Pstryk UPS → Configure.
+    Two steps:
+      1. UPS parameters (model, capacity, strings, charge/discharge rates)
+      2. MQTT topics (power, history, control, battery) + price refresh interval
+    """
+
+    def __init__(self) -> None:
+        self._options: dict[str, Any] = {}
+
+    def _merged(self) -> dict[str, Any]:
+        """Return current config with existing options already applied."""
+        return {**self.config_entry.data, **self.config_entry.options}
+
+    # ── Step 1: UPS parameters ───────────────────────────────────────────────
+
+    async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Finish reconfigure by updating the entry data."""
-        entry = self.hass.config_entries.async_get_entry(self.context["entry_id"])
-        if entry is None:
-            return self.async_abort(reason="entry_not_found")
+        """First step: UPS model and battery parameters."""
+        if user_input is not None:
+            self._options.update(_parse_ups_input(user_input))
+            return await self.async_step_mqtt_topics()
+
+        current = self._merged()
+        return self.async_show_form(
+            step_id="init",
+            data_schema=_ups_schema(
+                ups_model=current.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL),
+                battery_capacity=current.get(CONF_BATTERY_CAPACITY, DEFAULT_BATTERY_CAPACITY),
+                num_strings=current.get(CONF_NUM_STRINGS, DEFAULT_NUM_STRINGS),
+                max_charge_rate=current.get(CONF_MAX_CHARGE_RATE, DEFAULT_MAX_CHARGE_RATE),
+                max_discharge_rate=current.get(CONF_MAX_DISCHARGE_RATE, DEFAULT_MAX_DISCHARGE_RATE),
+            ),
+        )
+
+    # ── Step 2: MQTT topics & scheduling ─────────────────────────────────────
+
+    async def async_step_mqtt_topics(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Second step: all MQTT topics and price refresh interval."""
+        errors: dict[str, str] = {}
 
         if user_input is not None:
-            updated = dict(entry.data)
-            updated.update(self._data)
-            return self.async_update_reload_and_abort(
-                entry,
-                data=updated,
-                reason="reconfigure_successful",
-            )
+            parsed = _parse_mqtt_input(user_input)
+            if not parsed[CONF_MQTT_POWER_TOPIC]:
+                errors[CONF_MQTT_POWER_TOPIC] = "required"
+            if not parsed[CONF_MQTT_HISTORY_TOPIC]:
+                errors[CONF_MQTT_HISTORY_TOPIC] = "required"
+            if not parsed[CONF_MQTT_CONTROL_TOPIC]:
+                errors[CONF_MQTT_CONTROL_TOPIC] = "required"
 
-        return self.async_abort(reason="reconfigure_successful")
+            if not errors:
+                self._options.update(parsed)
+                return self.async_create_entry(data=self._options)
+
+        current = self._merged()
+        return self.async_show_form(
+            step_id="mqtt_topics",
+            data_schema=_mqtt_schema(
+                power_topic=current.get(CONF_MQTT_POWER_TOPIC, ""),
+                history_topic=current.get(CONF_MQTT_HISTORY_TOPIC, ""),
+                control_topic=current.get(CONF_MQTT_CONTROL_TOPIC, ""),
+                battery_topic=current.get(CONF_MQTT_BATTERY_TOPIC, ""),
+                refresh_interval=current.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL),
+            ),
+            errors=errors,
+        )

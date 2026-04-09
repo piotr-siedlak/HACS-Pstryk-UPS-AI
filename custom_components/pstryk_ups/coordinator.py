@@ -57,7 +57,9 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def __init__(self, hass: HomeAssistant, entry: ConfigEntry) -> None:
         self.hass = hass
         self.entry = entry
-        self.config = dict(entry.data)
+        # Options (set via the Configure button) override the original data so
+        # users can change topics and UPS params without re-adding the entry.
+        self.config = {**entry.data, **entry.options}
 
         refresh_interval_h: int = self.config.get(CONF_REFRESH_INTERVAL, DEFAULT_REFRESH_INTERVAL)
         super().__init__(
