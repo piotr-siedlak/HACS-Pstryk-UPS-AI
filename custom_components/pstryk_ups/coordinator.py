@@ -102,6 +102,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.claude_api_last_success: datetime | None = None
         self.claude_schedule_source: str = "unknown"
         self.claude_last_prompt: str = ""
+        self.claude_last_request: str = ""
 
         # MQTT per-topic last-update timestamps
         self.mqtt_last_power_update: datetime | None = None
@@ -378,6 +379,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         # Sync Claude status from planner attributes (set during generate_schedule)
         self.claude_last_prompt = self._planner.last_prompt
+        self.claude_last_request = self._planner.last_request
         self.claude_schedule_source = self._planner.last_source
         self.claude_api_last_error = self._planner.last_error
         if self._planner.last_checked:
@@ -487,6 +489,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.claude_api_last_success.isoformat() if self.claude_api_last_success else None
             ),
             "claude_schedule_source": self.claude_schedule_source,
+            "claude_last_request": self.claude_last_request,
             "claude_last_prompt": self.claude_last_prompt,
             # MQTT status
             "mqtt_status": self.mqtt_status,

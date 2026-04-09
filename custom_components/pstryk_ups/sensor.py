@@ -381,6 +381,7 @@ class ClaudeAPIStatusSensor(PstrykUPSSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self._coordinator_data
         return {
+            "last_request": data.get("claude_last_request", ""),
             "last_success": data.get("claude_api_last_success"),
             "last_error": data.get("claude_api_last_error"),
             "schedule_source": data.get("claude_schedule_source", "unknown"),

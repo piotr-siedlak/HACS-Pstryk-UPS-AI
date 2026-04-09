@@ -48,6 +48,7 @@ class ClaudePlanner:
         self.last_error: str | None = None
         self.last_checked: datetime | None = None
         self.last_prompt: str = ""
+        self.last_request: str = ""   # summary of the last Anthropic API call
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -82,6 +83,10 @@ class ClaudePlanner:
                 prices, current_power_kw, power_history, current_battery_pct, custom_prompt
             )
             self.last_prompt = prompt
+            self.last_request = (
+                f"POST /v1/messages  model={CLAUDE_MODEL}  max_tokens={CLAUDE_MAX_TOKENS}"
+                f"  prompt_chars={len(prompt)}  prompt_lines={prompt.count(chr(10))}"
+            )
             _LOGGER.debug("Requesting schedule from Claude (%s)", CLAUDE_MODEL)
             message = await self._client.messages.create(
                 model=CLAUDE_MODEL,
