@@ -157,6 +157,22 @@
       },
       "daily_savings": {
         "name": "Szacowane oszczędności dzienne"
+      },
+      "pstryk_api_status": {
+        "name": "Status API Pstryk",
+        "state": {
+          "ok": "OK",
+          "error": "Błąd",
+          "unknown": "Nieznany"
+        }
+      },
+      "claude_api_status": {
+        "name": "Status API Claude",
+        "state": {
+          "ok": "OK",
+          "error": "Błąd",
+          "unknown": "Nieznany"
+        }
       }
     },
     "switch": {

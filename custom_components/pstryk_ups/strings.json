@@ -153,6 +153,22 @@
       },
       "daily_savings": {
         "name": "Estimated Daily Savings"
+      },
+      "pstryk_api_status": {
+        "name": "Pstryk API Status",
+        "state": {
+          "ok": "OK",
+          "error": "Error",
+          "unknown": "Unknown"
+        }
+      },
+      "claude_api_status": {
+        "name": "Claude API Status",
+        "state": {
+          "ok": "OK",
+          "error": "Error",
+          "unknown": "Unknown"
+        }
       }
     },
     "switch": {

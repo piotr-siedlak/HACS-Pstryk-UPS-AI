@@ -42,6 +42,11 @@ class ClaudePlanner:
         self._ups_config = ups_config  # keys: battery_capacity_kwh, max_charge_rate_kw,
         #        max_discharge_rate_kw, num_strings, ups_model
 
+        # Status tracking — read by coordinator for the Claude API status sensor
+        self.last_source: str = "unknown"   # "claude" | "heuristic" | "unknown"
+        self.last_error: str | None = None
+        self.last_checked: datetime | None = None
+
     # ── Public API ──────────────────────────────────────────────────────────
 
     async def async_generate_schedule(
@@ -61,8 +66,12 @@ class ClaudePlanner:
         - ``reason``          – human-readable explanation
         - ``battery_level_pct`` – estimated battery SOC at end of this hour (%)
         """
+        self.last_checked = datetime.now(timezone.utc)
+
         if not prices:
             _LOGGER.warning("No price data available; using heuristic schedule")
+            self.last_source = "heuristic"
+            self.last_error = "No price data available"
             return self._heuristic_schedule(prices, current_battery_pct)
 
         try:
@@ -78,11 +87,17 @@ class ClaudePlanner:
             if not schedule:
                 raise ClaudePlannerError("Claude returned an empty or invalid schedule")
             _LOGGER.debug("Claude returned %d schedule items", len(schedule))
+            self.last_source = "claude"
+            self.last_error = None
             return schedule
         except anthropic.APIError as exc:
             _LOGGER.error("Claude API error: %s — falling back to heuristic schedule", exc)
+            self.last_source = "heuristic"
+            self.last_error = str(exc)
         except ClaudePlannerError as exc:
             _LOGGER.warning("Schedule parsing failed: %s — falling back to heuristic schedule", exc)
+            self.last_source = "heuristic"
+            self.last_error = str(exc)
 
         return self._heuristic_schedule(prices, current_battery_pct)
 

@@ -91,6 +91,16 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         # PLN saved today (computed from schedule vs idle baseline)
         self.daily_savings_pln: float = 0.0
 
+        # API status tracking — exposed via status sensor entities
+        self.pstryk_api_status: str = "unknown"
+        self.pstryk_api_last_error: str | None = None
+        self.pstryk_api_last_success: datetime | None = None
+        self.pstryk_api_last_checked: datetime | None = None
+        self.claude_api_status: str = "unknown"
+        self.claude_api_last_error: str | None = None
+        self.claude_api_last_success: datetime | None = None
+        self.claude_schedule_source: str = "unknown"
+
         # How often (hours) to call the Pstryk API
         self._price_refresh_interval = timedelta(hours=refresh_interval_h)
 
@@ -271,11 +281,15 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         now_warsaw = now_utc.astimezone(self._warsaw)
 
         if self._needs_price_refresh(now_utc, now_warsaw):
+            self.pstryk_api_last_checked = now_utc
             try:
                 _LOGGER.debug("Refreshing Pstryk prices")
                 prices, includes_next_day = await self._pstryk.async_get_prices()
                 self.prices = prices
                 self.last_price_refresh = now_utc
+                self.pstryk_api_status = "ok"
+                self.pstryk_api_last_success = now_utc
+                self.pstryk_api_last_error = None
 
                 if includes_next_day:
                     self._next_day_prices_fetched_date = now_warsaw.date()
@@ -291,6 +305,8 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 # Regenerate schedule whenever prices change
                 await self._refresh_schedule()
             except PstrykAPIError as exc:
+                self.pstryk_api_status = "error"
+                self.pstryk_api_last_error = str(exc)
                 # Don't fail the whole coordinator — continue with stale prices
                 if self.prices:
                     _LOGGER.warning("Pstryk API error (using cached prices): %s", exc)
@@ -320,6 +336,19 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.info("Schedule regenerated: %d hours planned", len(self.schedule))
         except Exception as exc:  # noqa: BLE001
             _LOGGER.error("Unexpected error generating schedule: %s", exc, exc_info=True)
+
+        # Sync Claude status from planner attributes (set during generate_schedule)
+        self.claude_schedule_source = self._planner.last_source
+        self.claude_api_last_error = self._planner.last_error
+        if self._planner.last_checked:
+            if self._planner.last_source == "claude":
+                self.claude_api_status = "ok"
+                self.claude_api_last_success = self._planner.last_checked
+            elif self._planner.last_source == "heuristic" and self._planner.last_error:
+                self.claude_api_status = "error"
+            # "heuristic" without an error means no prices — not Claude's fault
+            elif self._planner.last_source == "heuristic":
+                self.claude_api_status = "error"
 
     def _apply_current_hour_schedule(self) -> None:
         """Set charging/discharging state based on the current hour's scheduled action."""
@@ -401,6 +430,22 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # Indicates whether tomorrow's prices are included in the current dataset.
             # False before ~15:00 Warsaw; True once TGE publishes next-day prices.
             "next_day_prices_available": self._next_day_prices_fetched_date == now.astimezone(self._warsaw).date(),
+            # Pstryk API status
+            "pstryk_api_status": self.pstryk_api_status,
+            "pstryk_api_last_error": self.pstryk_api_last_error,
+            "pstryk_api_last_success": (
+                self.pstryk_api_last_success.isoformat() if self.pstryk_api_last_success else None
+            ),
+            "pstryk_api_last_checked": (
+                self.pstryk_api_last_checked.isoformat() if self.pstryk_api_last_checked else None
+            ),
+            # Claude API status
+            "claude_api_status": self.claude_api_status,
+            "claude_api_last_error": self.claude_api_last_error,
+            "claude_api_last_success": (
+                self.claude_api_last_success.isoformat() if self.claude_api_last_success else None
+            ),
+            "claude_schedule_source": self.claude_schedule_source,
         }
 
     # ── Price & schedule helpers ────────────────────────────────────────────
