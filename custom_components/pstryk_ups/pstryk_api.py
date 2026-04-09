@@ -90,6 +90,7 @@ class PstrykAPIClient:
         self._api_key = api_key
         self._session = session
         self._base_url = PSTRYK_API_BASE_URL.rstrip("/")
+        self.last_request: str = ""   # full URL + query string of the last price fetch
 
     # ── Window helpers ──────────────────────────────────────────────────────────
 
@@ -163,6 +164,10 @@ class PstrykAPIClient:
             # for_tz is NOT allowed with resolution=hour per the Pstryk API spec
         }
 
+        self.last_request = (
+            f"{url}?metrics={params['metrics']}&resolution={params['resolution']}"
+            f"&window_start={params['window_start']}&window_end={params['window_end']}"
+        )
         _LOGGER.debug(
             "Fetching Pstryk prices  %s → %s  includes_next_day=%s",
             params["window_start"], params["window_end"], includes_next_day,

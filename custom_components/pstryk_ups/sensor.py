@@ -339,6 +339,7 @@ class PstrykAPIStatusSensor(PstrykUPSSensor):
     def extra_state_attributes(self) -> dict[str, Any]:
         data = self._coordinator_data
         return {
+            "last_request": data.get("pstryk_api_last_request", ""),
             "last_success": data.get("pstryk_api_last_success"),
             "last_error": data.get("pstryk_api_last_error"),
             "last_checked": data.get("pstryk_api_last_checked"),

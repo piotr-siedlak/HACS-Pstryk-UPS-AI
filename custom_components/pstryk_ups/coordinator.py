@@ -472,6 +472,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "next_day_prices_available": self._next_day_prices_fetched_date == now.astimezone(self._warsaw).date(),
             # Pstryk API status
             "pstryk_api_status": self.pstryk_api_status,
+            "pstryk_api_last_request": self._pstryk.last_request,
             "pstryk_api_last_error": self.pstryk_api_last_error,
             "pstryk_api_last_success": (
                 self.pstryk_api_last_success.isoformat() if self.pstryk_api_last_success else None
