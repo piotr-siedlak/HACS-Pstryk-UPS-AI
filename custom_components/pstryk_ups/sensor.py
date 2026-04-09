@@ -102,7 +102,7 @@ class PstrykUPSSensor(CoordinatorEntity[PstrykUPSCoordinator], SensorEntity):
         return self.coordinator.data or {}
 
 
-# ── Sensor implementations ────────────────────────────────────────────────────
+# ── Sensor implementations ──────────────────────────────────────────────────────
 
 class CurrentPriceSensor(PstrykUPSSensor):
     """Current electricity price from Pstryk API (PLN/kWh)."""

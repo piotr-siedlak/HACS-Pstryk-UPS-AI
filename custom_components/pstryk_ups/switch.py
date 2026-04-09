@@ -77,7 +77,7 @@ class PstrykUPSSwitch(CoordinatorEntity[PstrykUPSCoordinator], SwitchEntity):
         return self.coordinator.data or {}
 
 
-# ── Switch implementations ────────────────────────────────────────────────────
+# ── Switch implementations ──────────────────────────────────────────────────────
 
 class ChargingSwitch(PstrykUPSSwitch):
     """Toggle UPS battery charging on/off.

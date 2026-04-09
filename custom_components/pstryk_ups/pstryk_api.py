@@ -77,7 +77,7 @@ class PstrykAPIClient:
         self._session = session
         self._base_url = PSTRYK_API_BASE_URL.rstrip("/")
 
-    # ── Window helpers ──────────────────────────────────────────────────────
+    # ── Window helpers ──────────────────────────────────────────────────────────
 
     @staticmethod
     def get_fetch_window() -> tuple[datetime, datetime, bool]:
@@ -122,7 +122,7 @@ class PstrykAPIClient:
 
         return window_start, window_end, includes_next_day
 
-    # ── Public API ──────────────────────────────────────────────────────────
+    # ── Public API ───────────────────────────────────────────────────────────────
 
     async def async_get_prices(self) -> tuple[list[dict[str, Any]], bool]:
         """Fetch hourly TGE spot prices for the available window.
@@ -214,7 +214,7 @@ class PstrykAPIClient:
             _LOGGER.warning("Pstryk key validation: network error — %s", exc)
             raise
 
-    # ── Response parsing ────────────────────────────────────────────────────
+    # ── Response parsing ──────────────────────────────────────────────────────────
 
     def _parse_unified_response(self, payload: Any) -> list[dict[str, Any]]:
         """Parse the unified-metrics API response into a flat price list."""
@@ -242,7 +242,7 @@ class PstrykAPIClient:
         if not isinstance(frame, dict):
             return None
 
-        # ── Timestamp ──────────────────────────────────────────────────────
+        # ── Timestamp ──────────────────────────────────────────────────────────────
         # Primary field is "start" per the documented example; fall back to
         # other plausible names the API might use.
         ts_raw: str | None = (
@@ -268,7 +268,7 @@ class PstrykAPIClient:
             _LOGGER.debug("Unparseable frame timestamp %r — skipping", ts_raw)
             return None
 
-        # ── Pricing data ────────────────────────────────────────────────────
+        # ── Pricing data ───────────────────────────────────────────────────────────
         # Look first inside metrics.pricing (documented shape), then fall back
         # to a flat layout where fields live directly on the frame.
         pricing_src: dict[str, Any] = {}
