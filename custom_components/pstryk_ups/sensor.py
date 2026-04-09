@@ -29,11 +29,13 @@ from .const import (
     DOMAIN,
     MANUFACTURER,
     SENSOR_BATTERY_LEVEL,
+    SENSOR_CLAUDE_STATUS,
     SENSOR_CURRENT_POWER,
     SENSOR_CURRENT_PRICE,
     SENSOR_DAILY_SAVINGS,
     SENSOR_NEXT_CHARGE,
     SENSOR_NEXT_DISCHARGE,
+    SENSOR_PSTRYK_STATUS,
     SENSOR_SCHEDULE_STATUS,
     VERSION,
 )
@@ -63,6 +65,8 @@ async def async_setup_entry(
             NextDischargeWindowSensor(coordinator, entry),
             BatteryLevelSensor(coordinator, entry),
             DailySavingsSensor(coordinator, entry),
+            PstrykAPIStatusSensor(coordinator, entry),
+            ClaudeAPIStatusSensor(coordinator, entry),
         ]
     )
 
@@ -98,7 +102,7 @@ class PstrykUPSSensor(CoordinatorEntity[PstrykUPSCoordinator], SensorEntity):
         return self.coordinator.data or {}
 
 
-# ── Sensor implementations ────────────────────────────────────────────────────
+# ── Sensor implementations ──────────────────────────────────────────────────────
 
 class CurrentPriceSensor(PstrykUPSSensor):
     """Current electricity price from Pstryk API (PLN/kWh)."""
@@ -307,4 +311,67 @@ class DailySavingsSensor(PstrykUPSSensor):
         return {
             "scheduled_charge_hours": charge_count,
             "scheduled_discharge_hours": discharge_count,
+        }
+
+
+class PstrykAPIStatusSensor(PstrykUPSSensor):
+    """Shows whether the Pstryk electricity pricing API is reachable."""
+
+    _attr_translation_key = "pstryk_api_status"
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_PSTRYK_STATUS)
+
+    @property
+    def native_value(self) -> str:
+        return self._coordinator_data.get("pstryk_api_status", "unknown")
+
+    @property
+    def icon(self) -> str:
+        status = self.native_value
+        if status == "ok":
+            return "mdi:cloud-check"
+        if status == "error":
+            return "mdi:cloud-off-outline"
+        return "mdi:cloud-question"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._coordinator_data
+        return {
+            "last_success": data.get("pstryk_api_last_success"),
+            "last_error": data.get("pstryk_api_last_error"),
+            "last_checked": data.get("pstryk_api_last_checked"),
+            "next_day_prices_available": data.get("next_day_prices_available", False),
+        }
+
+
+class ClaudeAPIStatusSensor(PstrykUPSSensor):
+    """Shows whether the Claude AI API is reachable and generating schedules."""
+
+    _attr_translation_key = "claude_api_status"
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_CLAUDE_STATUS)
+
+    @property
+    def native_value(self) -> str:
+        return self._coordinator_data.get("claude_api_status", "unknown")
+
+    @property
+    def icon(self) -> str:
+        status = self.native_value
+        if status == "ok":
+            return "mdi:robot"
+        if status == "error":
+            return "mdi:robot-dead"
+        return "mdi:robot-outline"
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        data = self._coordinator_data
+        return {
+            "last_success": data.get("claude_api_last_success"),
+            "last_error": data.get("claude_api_last_error"),
+            "schedule_source": data.get("claude_schedule_source", "unknown"),
         }
