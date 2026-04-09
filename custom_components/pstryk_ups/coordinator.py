@@ -111,6 +111,9 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._next_day_prices_fetched_date: date | None = None
         self._warsaw = ZoneInfo(WARSAW_TZ_NAME)
 
+        # MQTT status — "connected" | "no_topics" | "unavailable"
+        self.mqtt_status: str = "unavailable"
+
         # MQTT subscription cancel callbacks
         self._mqtt_unsubs: list[Any] = []
 
@@ -136,11 +139,25 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     # ── MQTT lifecycle ──────────────────────────────────────────────────────
 
+    def _mqtt_available(self) -> bool:
+        """Return True when the MQTT integration is loaded and ready."""
+        return mqtt.DOMAIN in self.hass.config.components
+
     async def async_setup_mqtt(self) -> None:
         """Subscribe to all configured MQTT topics. Call once during setup."""
+        if not self._mqtt_available():
+            _LOGGER.info(
+                "MQTT integration not loaded — skipping topic subscriptions. "
+                "Configure MQTT in Home Assistant and reload this integration to enable it."
+            )
+            self.mqtt_status = "unavailable"
+            return
+
         power_topic: str = self.config.get(CONF_MQTT_POWER_TOPIC, "")
         history_topic: str = self.config.get(CONF_MQTT_HISTORY_TOPIC, "")
         battery_topic: str = self.config.get(CONF_MQTT_BATTERY_TOPIC, "")
+
+        subscribed: list[str] = []
 
         if power_topic:
             _LOGGER.debug("Subscribing to power topic: %s", power_topic)
@@ -148,6 +165,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, power_topic, self._handle_power_message
             )
             self._mqtt_unsubs.append(unsub)
+            subscribed.append(f"power={power_topic}")
 
         if history_topic:
             _LOGGER.debug("Subscribing to history topic: %s", history_topic)
@@ -155,6 +173,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, history_topic, self._handle_history_message
             )
             self._mqtt_unsubs.append(unsub)
+            subscribed.append(f"history={history_topic}")
 
         if battery_topic:
             _LOGGER.debug("Subscribing to battery topic: %s", battery_topic)
@@ -162,6 +181,14 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.hass, battery_topic, self._handle_battery_message
             )
             self._mqtt_unsubs.append(unsub)
+            subscribed.append(f"battery={battery_topic}")
+
+        if subscribed:
+            self.mqtt_status = "connected"
+            _LOGGER.info("MQTT subscribed: %s", ", ".join(subscribed))
+        else:
+            self.mqtt_status = "no_topics"
+            _LOGGER.info("MQTT available but no topics configured — UPS control disabled")
 
     async def async_unload(self) -> None:
         """Cancel all MQTT subscriptions. Call during unload."""
@@ -449,6 +476,13 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.claude_api_last_success.isoformat() if self.claude_api_last_success else None
             ),
             "claude_schedule_source": self.claude_schedule_source,
+            # MQTT status
+            "mqtt_status": self.mqtt_status,
+            "mqtt_power_topic": self.config.get(CONF_MQTT_POWER_TOPIC, ""),
+            "mqtt_history_topic": self.config.get(CONF_MQTT_HISTORY_TOPIC, ""),
+            "mqtt_charge_topic": self.config.get(CONF_MQTT_CHARGE_TOPIC, ""),
+            "mqtt_discharge_topic": self.config.get(CONF_MQTT_DISCHARGE_TOPIC, ""),
+            "mqtt_battery_topic": self.config.get(CONF_MQTT_BATTERY_TOPIC, ""),
         }
 
     # ── Price & schedule helpers ────────────────────────────────────────────
@@ -512,8 +546,8 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _publish_charge_command(self, enabled: bool) -> None:
         """Publish 1 (on) or 0 (off) to the configured MQTT charge topic."""
         topic: str = self.config.get(CONF_MQTT_CHARGE_TOPIC, "")
-        if not topic:
-            _LOGGER.debug("No MQTT charge topic configured; skipping publish")
+        if not topic or not self._mqtt_available():
+            _LOGGER.debug("Charge publish skipped (topic=%r, mqtt=%s)", topic, self.mqtt_status)
             return
         payload = MQTT_PAYLOAD_ON if enabled else MQTT_PAYLOAD_OFF
         try:
@@ -525,8 +559,8 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def _publish_discharge_command(self, enabled: bool) -> None:
         """Publish 1 (on) or 0 (off) to the configured MQTT discharge topic."""
         topic: str = self.config.get(CONF_MQTT_DISCHARGE_TOPIC, "")
-        if not topic:
-            _LOGGER.debug("No MQTT discharge topic configured; skipping publish")
+        if not topic or not self._mqtt_available():
+            _LOGGER.debug("Discharge publish skipped (topic=%r, mqtt=%s)", topic, self.mqtt_status)
             return
         payload = MQTT_PAYLOAD_ON if enabled else MQTT_PAYLOAD_OFF
         try:

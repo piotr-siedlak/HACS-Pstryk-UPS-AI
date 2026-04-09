@@ -37,7 +37,7 @@
       },
       "mqtt_schedule": {
         "title": "Tematy MQTT i harmonogramowanie",
-        "description": "Skonfiguruj tematy MQTT do monitorowania mocy i sterowania ładowaniem/rozładowywaniem UPS.",
+        "description": "Skonfiguruj tematy MQTT do monitorowania mocy i sterowania ładowaniem/rozładowywaniem UPS. Wszystkie pola tematów są opcjonalne — pozostaw puste, aby pominąć. Tematy można zaktualizować później w panelu Konfiguruj.",
         "data": {
           "mqtt_power_topic": "Temat bieżącego poboru mocy (kW)",
           "mqtt_history_topic": "Temat historii zużycia (JSON)",
@@ -81,7 +81,7 @@
     "step": {
       "init": {
         "title": "Ustawienia UPS i MQTT",
-        "description": "Zaktualizuj parametry UPS i tematy MQTT. Zmiany zostaną zastosowane po zapisaniu.",
+        "description": "Zaktualizuj parametry UPS, tematy MQTT i prompt dla Claude. Wszystkie pola tematów MQTT są opcjonalne — pozostaw puste, aby wyłączyć to źródło danych. Zmiany zostaną zastosowane po zapisaniu.",
         "data": {
           "ups_model": "Nazwa modelu UPS",
           "battery_capacity_kwh": "Całkowita pojemność baterii (kWh)",

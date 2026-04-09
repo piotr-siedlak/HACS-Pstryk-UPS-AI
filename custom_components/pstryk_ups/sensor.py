@@ -343,6 +343,12 @@ class PstrykAPIStatusSensor(PstrykUPSSensor):
             "last_error": data.get("pstryk_api_last_error"),
             "last_checked": data.get("pstryk_api_last_checked"),
             "next_day_prices_available": data.get("next_day_prices_available", False),
+            "mqtt_status": data.get("mqtt_status", "unavailable"),
+            "mqtt_power_topic": data.get("mqtt_power_topic", ""),
+            "mqtt_history_topic": data.get("mqtt_history_topic", ""),
+            "mqtt_charge_topic": data.get("mqtt_charge_topic", ""),
+            "mqtt_discharge_topic": data.get("mqtt_discharge_topic", ""),
+            "mqtt_battery_topic": data.get("mqtt_battery_topic", ""),
         }
 
 

@@ -116,11 +116,11 @@ def _mqtt_schema(
 ) -> vol.Schema:
     return vol.Schema(
         {
-            vol.Required(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
-            vol.Required(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
-            vol.Required(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
-            vol.Required(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
-            vol.Required(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
+            vol.Optional(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
+            vol.Optional(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
+            vol.Optional(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
+            vol.Optional(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
+            vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
             ),
@@ -251,22 +251,12 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
 
         if user_input is not None:
             parsed = _parse_mqtt_input(user_input)
-            if not parsed[CONF_MQTT_POWER_TOPIC]:
-                errors[CONF_MQTT_POWER_TOPIC] = "required"
-            if not parsed[CONF_MQTT_HISTORY_TOPIC]:
-                errors[CONF_MQTT_HISTORY_TOPIC] = "required"
-            if not parsed[CONF_MQTT_CHARGE_TOPIC]:
-                errors[CONF_MQTT_CHARGE_TOPIC] = "required"
-            if not parsed[CONF_MQTT_DISCHARGE_TOPIC]:
-                errors[CONF_MQTT_DISCHARGE_TOPIC] = "required"
-
-            if not errors:
-                self._data.update(parsed)
-                ups_model: str = self._data.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL)
-                return self.async_create_entry(
-                    title=f"Pstryk UPS ({ups_model})",
-                    data=self._data,
-                )
+            self._data.update(parsed)
+            ups_model: str = self._data.get(CONF_UPS_MODEL, DEFAULT_UPS_MODEL)
+            return self.async_create_entry(
+                title=f"Pstryk UPS ({ups_model})",
+                data=self._data,
+            )
 
         return self.async_show_form(
             step_id="mqtt_schedule",
@@ -366,12 +356,12 @@ def _options_schema(
             vol.Required(CONF_BATTERY_MAX_PCT, default=battery_max_pct): NumberSelector(
                 NumberSelectorConfig(min=50.0, max=100.0, step=1.0, unit_of_measurement="%", mode=NumberSelectorMode.BOX)
             ),
-            # ── MQTT topics ─────────────────────────────────────────────────
-            vol.Required(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
-            vol.Required(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
-            vol.Required(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
-            vol.Required(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
-            vol.Required(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
+            # ── MQTT topics (all optional — leave empty to skip) ─────────────
+            vol.Optional(CONF_MQTT_POWER_TOPIC, default=power_topic): str,
+            vol.Optional(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
+            vol.Optional(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
+            vol.Optional(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
+            vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
             ),
@@ -404,17 +394,6 @@ class PstrykUPSOptionsFlowHandler(OptionsFlow):
             ups = _parse_ups_input(user_input)
             mqtt = _parse_mqtt_input(user_input)
             claude_prompt = user_input.get(CONF_CLAUDE_PROMPT, DEFAULT_CLAUDE_PROMPT)
-
-            if not mqtt[CONF_MQTT_POWER_TOPIC]:
-                errors[CONF_MQTT_POWER_TOPIC] = "required"
-            if not mqtt[CONF_MQTT_HISTORY_TOPIC]:
-                errors[CONF_MQTT_HISTORY_TOPIC] = "required"
-            if not mqtt[CONF_MQTT_CHARGE_TOPIC]:
-                errors[CONF_MQTT_CHARGE_TOPIC] = "required"
-            if not mqtt[CONF_MQTT_DISCHARGE_TOPIC]:
-                errors[CONF_MQTT_DISCHARGE_TOPIC] = "required"
-            if not mqtt[CONF_MQTT_BATTERY_TOPIC]:
-                errors[CONF_MQTT_BATTERY_TOPIC] = "required"
 
             if not errors:
                 return self.async_create_entry(

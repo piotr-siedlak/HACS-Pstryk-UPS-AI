@@ -37,7 +37,7 @@
       },
       "mqtt_schedule": {
         "title": "MQTT Topics & Scheduling",
-        "description": "Configure MQTT topics for power monitoring and UPS charge/discharge control.",
+        "description": "Configure MQTT topics for power monitoring and UPS charge/discharge control. All topic fields are optional — leave empty to skip. Topics can be updated later from the Configure panel.",
         "data": {
           "mqtt_power_topic": "Real-time Power Topic (kW)",
           "mqtt_history_topic": "Historical Consumption Topic (JSON)",
@@ -81,7 +81,7 @@
     "step": {
       "init": {
         "title": "UPS & MQTT Settings",
-        "description": "Update UPS parameters and MQTT topics. Changes take effect after saving.",
+        "description": "Update UPS parameters, MQTT topics, and the Claude prompt. All MQTT topic fields are optional — leave empty to disable that data source. Changes take effect after saving.",
         "data": {
           "ups_model": "UPS Model Name",
           "battery_capacity_kwh": "Total Battery Capacity (kWh)",
