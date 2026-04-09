@@ -43,7 +43,7 @@
           "mqtt_history_topic": "Temat historii zużycia (JSON)",
           "mqtt_charge_topic": "Temat sterowania ładowaniem UPS",
           "mqtt_discharge_topic": "Temat sterowania rozładowywaniem UPS",
-          "mqtt_battery_topic": "Temat poziomu naładowania baterii (%, opcjonalnie)",
+          "mqtt_battery_topic": "Temat poziomu naładowania baterii (%)",
           "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
         },
         "data_description": {
@@ -51,7 +51,7 @@
           "mqtt_history_topic": "Temat MQTT publikujący historyczne zużycie kWh jako JSON ({\"daily\": {...}, \"hourly\": {...}}).",
           "mqtt_charge_topic": "Temat MQTT, do którego publikowane jest '1' (start ładowania) lub '0' (stop ładowania).",
           "mqtt_discharge_topic": "Temat MQTT, do którego publikowane jest '1' (start rozładowywania) lub '0' (stop rozładowywania).",
-          "mqtt_battery_topic": "Opcjonalny temat MQTT publikujący poziom naładowania akumulatora w procentach.",
+          "mqtt_battery_topic": "Temat MQTT publikujący poziom naładowania akumulatora w procentach.",
           "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk."
         }
       },
@@ -109,7 +109,7 @@
           "mqtt_history_topic": "Temat historii zużycia (JSON)",
           "mqtt_charge_topic": "Temat sterowania ładowaniem UPS",
           "mqtt_discharge_topic": "Temat sterowania rozładowywaniem UPS",
-          "mqtt_battery_topic": "Temat poziomu naładowania baterii (%, opcjonalnie)",
+          "mqtt_battery_topic": "Temat poziomu naładowania baterii (%)",
           "refresh_interval_hours": "Interwał odświeżania cen (godziny)"
         },
         "data_description": {
@@ -117,7 +117,7 @@
           "mqtt_history_topic": "Temat MQTT publikujący historyczne zużycie kWh jako JSON ({\"daily\": {...}, \"hourly\": {...}}).",
           "mqtt_charge_topic": "Temat MQTT, do którego publikowane jest '1' (start ładowania) lub '0' (stop ładowania).",
           "mqtt_discharge_topic": "Temat MQTT, do którego publikowane jest '1' (start rozładowywania) lub '0' (stop rozładowywania).",
-          "mqtt_battery_topic": "Opcjonalny temat MQTT publikujący poziom naładowania akumulatora w procentach.",
+          "mqtt_battery_topic": "Temat MQTT publikujący poziom naładowania akumulatora w procentach.",
           "refresh_interval_hours": "Jak często (w godzinach) pobierać nowe ceny energii elektrycznej z Pstryk."
         }
       }

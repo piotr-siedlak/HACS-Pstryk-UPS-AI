@@ -43,7 +43,7 @@
           "mqtt_history_topic": "Historical Consumption Topic (JSON)",
           "mqtt_charge_topic": "UPS Charge Control Topic",
           "mqtt_discharge_topic": "UPS Discharge Control Topic",
-          "mqtt_battery_topic": "Battery Level Topic (%, optional)",
+          "mqtt_battery_topic": "Battery Level Topic (%)",
           "refresh_interval_hours": "Price Refresh Interval (hours)"
         },
         "data_description": {
@@ -51,7 +51,7 @@
           "mqtt_history_topic": "MQTT topic publishing historical kWh consumption as JSON ({\"daily\": {...}, \"hourly\": {...}}).",
           "mqtt_charge_topic": "MQTT topic to which '1' (start charging) or '0' (stop charging) is published.",
           "mqtt_discharge_topic": "MQTT topic to which '1' (start discharging) or '0' (stop discharging) is published.",
-          "mqtt_battery_topic": "Optional MQTT topic publishing battery state of charge in percent.",
+          "mqtt_battery_topic": "MQTT topic publishing battery state of charge in percent.",
           "refresh_interval_hours": "How often (in hours) to fetch new electricity prices from Pstryk."
         }
       },
@@ -109,7 +109,7 @@
           "mqtt_history_topic": "Historical Consumption Topic (JSON)",
           "mqtt_charge_topic": "UPS Charge Control Topic",
           "mqtt_discharge_topic": "UPS Discharge Control Topic",
-          "mqtt_battery_topic": "Battery Level Topic (%, optional)",
+          "mqtt_battery_topic": "Battery Level Topic (%)",
           "refresh_interval_hours": "Price Refresh Interval (hours)"
         },
         "data_description": {
@@ -117,7 +117,7 @@
           "mqtt_history_topic": "MQTT topic publishing historical kWh consumption as JSON ({\"daily\": {...}, \"hourly\": {...}}).",
           "mqtt_charge_topic": "MQTT topic to which '1' (start charging) or '0' (stop charging) is published.",
           "mqtt_discharge_topic": "MQTT topic to which '1' (start discharging) or '0' (stop discharging) is published.",
-          "mqtt_battery_topic": "Optional MQTT topic publishing battery state of charge in percent.",
+          "mqtt_battery_topic": "MQTT topic publishing battery state of charge in percent.",
           "refresh_interval_hours": "How often (in hours) to fetch new electricity prices from Pstryk."
         }
       }

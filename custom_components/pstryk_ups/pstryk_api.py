@@ -137,7 +137,7 @@ class PstrykAPIClient:
 
         url = f"{self._base_url}{PSTRYK_UNIFIED_ENDPOINT}"
         headers = {
-            "Authorization": f"Token {self._api_key}",
+            "Authorization": self._api_key,
             "Accept": "application/json",
         }
         params = {
@@ -145,7 +145,7 @@ class PstrykAPIClient:
             "resolution": "hour",
             "window_start": window_start.strftime("%Y-%m-%dT%H:%M:%SZ"),
             "window_end": window_end.strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "for_tz": WARSAW_TZ_NAME,
+            # for_tz is NOT allowed with resolution=hour per the Pstryk API spec
         }
 
         _LOGGER.debug(
@@ -194,7 +194,7 @@ class PstrykAPIClient:
         """
         url = f"{self._base_url}{PSTRYK_UNIFIED_ENDPOINT}"
         headers = {
-            "Authorization": f"Token {self._api_key}",
+            "Authorization": self._api_key,
             "Accept": "application/json",
         }
         try:

@@ -95,7 +95,7 @@ Both keys are validated before proceeding.
 | Historical Consumption Topic | Yes | MQTT topic publishing JSON consumption history |
 | UPS Charge Control Topic | Yes | MQTT topic to receive `1`/`0` charge commands |
 | UPS Discharge Control Topic | Yes | MQTT topic to receive `1`/`0` discharge commands |
-| Battery Level Topic | No | MQTT topic publishing battery % (improves estimates) |
+| Battery Level Topic | Yes | MQTT topic publishing battery % (required for schedule accuracy) |
 | Price Refresh Interval | Yes (default 6) | How often (hours) to call the Pstryk API |
 
 ### Changing settings after setup

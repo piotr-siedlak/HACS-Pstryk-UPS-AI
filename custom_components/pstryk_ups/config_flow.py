@@ -118,7 +118,7 @@ def _mqtt_schema(
             vol.Required(CONF_MQTT_HISTORY_TOPIC, default=history_topic): str,
             vol.Required(CONF_MQTT_CHARGE_TOPIC, default=charge_topic): str,
             vol.Required(CONF_MQTT_DISCHARGE_TOPIC, default=discharge_topic): str,
-            vol.Optional(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
+            vol.Required(CONF_MQTT_BATTERY_TOPIC, default=battery_topic): str,
             vol.Required(CONF_REFRESH_INTERVAL, default=refresh_interval): NumberSelector(
                 NumberSelectorConfig(min=1, max=24, step=1, unit_of_measurement="h", mode=NumberSelectorMode.BOX)
             ),
