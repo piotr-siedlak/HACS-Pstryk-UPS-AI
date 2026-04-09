@@ -177,6 +177,12 @@
       },
       "last_claude_prompt": {
         "name": "Ostatni prompt Claude"
+      },
+      "schedule_next_24h": {
+        "name": "Harmonogram – następne 24h"
+      },
+      "schedule_past_3h": {
+        "name": "Harmonogram – ostatnie 3h"
       }
     },
     "switch": {

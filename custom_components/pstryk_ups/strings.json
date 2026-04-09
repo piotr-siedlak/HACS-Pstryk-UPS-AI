@@ -177,6 +177,12 @@
       },
       "last_claude_prompt": {
         "name": "Last Claude Prompt"
+      },
+      "schedule_next_24h": {
+        "name": "Schedule Next 24h"
+      },
+      "schedule_past_3h": {
+        "name": "Schedule Past 3h"
       }
     },
     "switch": {

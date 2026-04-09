@@ -38,6 +38,8 @@ from .const import (
     SENSOR_NEXT_CHARGE,
     SENSOR_NEXT_DISCHARGE,
     SENSOR_PSTRYK_STATUS,
+    SENSOR_SCHEDULE_NEXT_24H,
+    SENSOR_SCHEDULE_PAST_3H,
     SENSOR_SCHEDULE_STATUS,
     VERSION,
 )
@@ -71,6 +73,8 @@ async def async_setup_entry(
             ClaudeAPIStatusSensor(coordinator, entry),
             LastPstrykRequestSensor(coordinator, entry),
             LastClaudePromptSensor(coordinator, entry),
+            ScheduleNext24hSensor(coordinator, entry),
+            SchedulePast3hSensor(coordinator, entry),
         ]
     )
 
@@ -439,3 +443,110 @@ class LastClaudePromptSensor(PstrykUPSSensor):
             "full_prompt": prompt,
             "last_request_info": request,
         }
+
+
+# ── Schedule timeline helpers ─────────────────────────────────────────────────
+
+def _schedule_slot(item: dict[str, Any], label: str) -> dict[str, Any]:
+    """Return a condensed slot dict with a relative time label."""
+    return {
+        "label": label,
+        "hour": item.get("hour", ""),
+        "action": item.get("action", "idle"),
+        "price": item.get("price_pln_kwh"),
+        "power_kw": item.get("power_kw", 0),
+        "battery_pct": item.get("battery_level_pct"),
+        "reason": item.get("reason", ""),
+    }
+
+
+def _action_summary(slots: list[dict[str, Any]]) -> str:
+    charge = sum(1 for s in slots if s["action"] == "charge")
+    discharge = sum(1 for s in slots if s["action"] == "discharge")
+    idle = sum(1 for s in slots if s["action"] == "idle")
+    parts = []
+    if charge:
+        parts.append(f"{charge}× charge")
+    if discharge:
+        parts.append(f"{discharge}× discharge")
+    if idle:
+        parts.append(f"{idle}× idle")
+    return "  ".join(parts) if parts else "no data"
+
+
+class ScheduleNext24hSensor(PstrykUPSSensor):
+    """Next 24 hours of the AI schedule labelled Now, Now +1 … Now +24."""
+
+    _attr_translation_key = "schedule_next_24h"
+    _attr_icon = "mdi:calendar-clock"
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_SCHEDULE_NEXT_24H)
+
+    def _slots(self) -> list[dict[str, Any]]:
+        schedule = self._coordinator_data.get("schedule", [])
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        result: list[dict[str, Any]] = []
+        for item in schedule:
+            ts_str = item.get("hour", "")
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            delta_h = round((ts - now).total_seconds() / 3600)
+            if delta_h < 0 or delta_h > 24:
+                continue
+            label = "Now" if delta_h == 0 else f"Now +{delta_h}"
+            result.append(_schedule_slot(item, label))
+        result.sort(key=lambda s: s["hour"])
+        return result
+
+    @property
+    def native_value(self) -> str:
+        slots = self._slots()
+        summary = _action_summary(slots)
+        return f"{summary}"[:255]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"slots": self._slots()}
+
+
+class SchedulePast3hSensor(PstrykUPSSensor):
+    """Past 3 hours of the AI schedule labelled Now -1, Now -2, Now -3."""
+
+    _attr_translation_key = "schedule_past_3h"
+    _attr_icon = "mdi:calendar-arrow-left"
+
+    def __init__(self, coordinator: PstrykUPSCoordinator, entry: ConfigEntry) -> None:
+        super().__init__(coordinator, entry, SENSOR_SCHEDULE_PAST_3H)
+
+    def _slots(self) -> list[dict[str, Any]]:
+        schedule = self._coordinator_data.get("schedule", [])
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        result: list[dict[str, Any]] = []
+        for item in schedule:
+            ts_str = item.get("hour", "")
+            try:
+                ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            delta_h = round((ts - now).total_seconds() / 3600)
+            if delta_h < -3 or delta_h >= 0:
+                continue
+            label = f"Now {delta_h}"  # e.g. "Now -1"
+            result.append(_schedule_slot(item, label))
+        result.sort(key=lambda s: s["hour"])
+        return result
+
+    @property
+    def native_value(self) -> str:
+        slots = self._slots()
+        if not slots:
+            return "no past data"
+        summary = _action_summary(slots)
+        return f"{len(slots)}h: {summary}"[:255]
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {"slots": self._slots()}

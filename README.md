@@ -18,7 +18,7 @@ A production-ready [Home Assistant](https://www.home-assistant.io/) custom integ
 - **API status monitoring** — dedicated sensors show whether the Pstryk and Claude APIs are reachable, with last request URL, last-success timestamp, last error, last prompt sent, and MQTT connection status
 - **Dedicated API URL and prompt sensors** — `Last Pstryk API Request URL` and `Last Claude Prompt` are standalone sensors visible directly in the HA dashboard, not buried in attributes
 - **Periodic MQTT heartbeat** — charge/discharge state is re-published to MQTT every N seconds (configurable, default 30 s), so the UPS resyncs automatically after a power cycle or missed message
-- **11 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk API status, Claude API status, last Pstryk request URL, last Claude prompt
+- **13 sensor entities** — electricity price, power draw, schedule status, next charge/discharge windows, battery level, daily savings estimate, Pstryk API status, Claude API status, last Pstryk request URL, last Claude prompt, schedule next 24h timeline, schedule past 3h timeline
 - **3 switch entities** — manual charging toggle, manual discharging toggle, auto-schedule enable/disable
 - **Configurable MQTT repeat interval** — set how often (in seconds) the charge/discharge commands are re-sent; adjustable from 10 s to 3600 s in the Configure panel
 - **1 button entity** — manual price refresh that immediately fetches fresh Pstryk prices and regenerates the schedule, without affecting the automatic hourly cron
@@ -186,6 +186,8 @@ The integration publishes `1` (enable) or `0` (disable) — retained, QoS 1 — 
 | `sensor.pstryk_ups_claude_api_status` | Claude AI API status and schedule source | ok / error / unknown | `last_request`, `last_success`, `last_error`, `schedule_source` (claude / heuristic), `last_prompt` |
 | `sensor.pstryk_ups_last_pstryk_api_request_url` | Last Pstryk API request URL (max 255 chars) | — | `full_url` (complete URL) |
 | `sensor.pstryk_ups_last_claude_prompt` | Summary of the last Claude prompt (char count / line count) | — | `full_prompt` (complete prompt text), `last_request_info` |
+| `sensor.pstryk_ups_schedule_next_24h` | Summary of the next 24 h schedule (e.g. `5× charge  3× discharge  16× idle`) | — | `slots` — list of `{label, hour, action, price, power_kw, battery_pct, reason}` for Now through Now +24 |
+| `sensor.pstryk_ups_schedule_past_3h` | Summary of the past 3 h from the schedule (e.g. `3h: 2× charge  1× idle`) | — | `slots` — list of `{label, hour, action, price, power_kw, battery_pct, reason}` for Now -3 through Now -1 |
 
 ### Switches
 
@@ -275,6 +277,8 @@ entities:
   - entity: sensor.pstryk_ups_claude_api_status
   - entity: sensor.pstryk_ups_last_pstryk_api_request_url
   - entity: sensor.pstryk_ups_last_claude_prompt
+  - entity: sensor.pstryk_ups_schedule_next_24h
+  - entity: sensor.pstryk_ups_schedule_past_3h
   - entity: button.pstryk_ups_refresh_prices
 ```
 
@@ -329,6 +333,9 @@ logger:
 ---
 
 ## Changelog
+
+### v1.10.6
+- **Schedule timeline sensors**: Added `sensor.pstryk_ups_schedule_next_24h` (slots labelled `Now`, `Now +1` … `Now +24`) and `sensor.pstryk_ups_schedule_past_3h` (slots labelled `Now -3`, `Now -2`, `Now -1`). State is a human-readable action summary; `slots` attribute contains the full structured list for use in Lovelace Markdown cards
 
 ### v1.10.5
 - **Dedicated API URL and prompt sensors**: Added `sensor.pstryk_ups_last_pstryk_api_request_url` (state = last URL called, attribute `full_url`) and `sensor.pstryk_ups_last_claude_prompt` (state = char/line count, attribute `full_prompt` = complete prompt text). These are now visible directly in the HA dashboard without digging into attributes
