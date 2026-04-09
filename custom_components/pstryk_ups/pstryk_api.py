@@ -183,16 +183,35 @@ class PstrykAPIClient:
         return prices, includes_next_day
 
     async def async_validate_key(self) -> bool:
-        """Return True when the API key is accepted by the server."""
+        """Return True when the API key is accepted by the server.
+
+        Makes a lightweight GET to the unified-metrics endpoint with no data
+        parameters — sufficient to trigger an auth check without needing a
+        valid query window.  Only HTTP 401 is treated as a definitive "wrong
+        key" signal.  HTTP 403 means the key reached the server but may lack a
+        specific plan permission — still a valid credential.  Any other
+        response (200, 400, 404 …) also means the key was accepted.
+        """
+        url = f"{self._base_url}{PSTRYK_UNIFIED_ENDPOINT}"
+        headers = {
+            "Authorization": f"Token {self._api_key}",
+            "Accept": "application/json",
+        }
         try:
-            await self.async_get_prices()
-            return True
-        except PstrykAuthError:
-            return False
-        except PstrykAPIError as exc:
-            # Network / server error — ambiguous; allow save, fail at runtime
-            _LOGGER.warning("Pstryk API key validation: non-auth error — %s", exc)
-            return True
+            async with self._session.get(
+                url,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=PSTRYK_API_TIMEOUT),
+            ) as resp:
+                _LOGGER.debug(
+                    "Pstryk key validation: HTTP %s from %s", resp.status, url
+                )
+                return resp.status != 401
+        except aiohttp.ClientError as exc:
+            # Network unreachable — cannot validate; let the user proceed and
+            # discover connectivity issues at runtime.
+            _LOGGER.warning("Pstryk key validation: network error — %s", exc)
+            raise
 
     # ── Response parsing ────────────────────────────────────────────────────
 

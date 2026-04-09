@@ -253,8 +253,10 @@ class PstrykUPSConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors[CONF_MQTT_POWER_TOPIC] = "required"
             if not parsed[CONF_MQTT_HISTORY_TOPIC]:
                 errors[CONF_MQTT_HISTORY_TOPIC] = "required"
-            if not parsed[CONF_MQTT_CONTROL_TOPIC]:
-                errors[CONF_MQTT_CONTROL_TOPIC] = "required"
+            if not parsed[CONF_MQTT_CHARGE_TOPIC]:
+                errors[CONF_MQTT_CHARGE_TOPIC] = "required"
+            if not parsed[CONF_MQTT_DISCHARGE_TOPIC]:
+                errors[CONF_MQTT_DISCHARGE_TOPIC] = "required"
 
             if not errors:
                 self._data.update(parsed)
