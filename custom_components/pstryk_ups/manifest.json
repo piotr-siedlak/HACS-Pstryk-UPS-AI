@@ -1,7 +1,7 @@
 {
   "domain": "pstryk_ups",
   "name": "Pstryk UPS AI Optimizer",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "documentation": "https://github.com/piotr-siedlak/hacs-pstryk-ups-ai",
   "issue_tracker": "https://github.com/piotr-siedlak/hacs-pstryk-ups-ai/issues",
   "requirements": ["anthropic>=0.40.0"],

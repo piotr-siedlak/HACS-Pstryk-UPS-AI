@@ -345,10 +345,13 @@ class PstrykAPIStatusSensor(PstrykUPSSensor):
             "next_day_prices_available": data.get("next_day_prices_available", False),
             "mqtt_status": data.get("mqtt_status", "unavailable"),
             "mqtt_power_topic": data.get("mqtt_power_topic", ""),
+            "mqtt_last_power_update": data.get("mqtt_last_power_update"),
             "mqtt_history_topic": data.get("mqtt_history_topic", ""),
+            "mqtt_last_history_update": data.get("mqtt_last_history_update"),
             "mqtt_charge_topic": data.get("mqtt_charge_topic", ""),
             "mqtt_discharge_topic": data.get("mqtt_discharge_topic", ""),
             "mqtt_battery_topic": data.get("mqtt_battery_topic", ""),
+            "mqtt_last_battery_update": data.get("mqtt_last_battery_update"),
         }
 
 
@@ -380,4 +383,5 @@ class ClaudeAPIStatusSensor(PstrykUPSSensor):
             "last_success": data.get("claude_api_last_success"),
             "last_error": data.get("claude_api_last_error"),
             "schedule_source": data.get("claude_schedule_source", "unknown"),
+            "last_prompt": data.get("claude_last_prompt", ""),
         }

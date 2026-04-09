@@ -47,6 +47,7 @@ class ClaudePlanner:
         self.last_source: str = "unknown"   # "claude" | "heuristic" | "unknown"
         self.last_error: str | None = None
         self.last_checked: datetime | None = None
+        self.last_prompt: str = ""
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -80,6 +81,7 @@ class ClaudePlanner:
             prompt = self._build_prompt(
                 prices, current_power_kw, power_history, current_battery_pct, custom_prompt
             )
+            self.last_prompt = prompt
             _LOGGER.debug("Requesting schedule from Claude (%s)", CLAUDE_MODEL)
             message = await self._client.messages.create(
                 model=CLAUDE_MODEL,

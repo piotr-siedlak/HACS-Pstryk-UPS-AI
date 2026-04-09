@@ -101,6 +101,12 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.claude_api_last_error: str | None = None
         self.claude_api_last_success: datetime | None = None
         self.claude_schedule_source: str = "unknown"
+        self.claude_last_prompt: str = ""
+
+        # MQTT per-topic last-update timestamps
+        self.mqtt_last_power_update: datetime | None = None
+        self.mqtt_last_history_update: datetime | None = None
+        self.mqtt_last_battery_update: datetime | None = None
 
         # How often (hours) to call the Pstryk API
         self._price_refresh_interval = timedelta(hours=refresh_interval_h)
@@ -219,6 +225,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.current_power_kw = float(value)
             else:
                 self.current_power_kw = float(payload)
+            self.mqtt_last_power_update = datetime.now(timezone.utc)
             _LOGGER.debug("Power draw updated: %.3f kW", self.current_power_kw)
             self.async_update_listeners()
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -240,6 +247,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 else:
                     # Treat as flat hourly dict
                     self.power_history["hourly"].update(data)
+            self.mqtt_last_history_update = datetime.now(timezone.utc)
             _LOGGER.debug("Power history updated (%d daily, %d hourly entries)",
                           len(self.power_history.get("daily", {})),
                           len(self.power_history.get("hourly", {})))
@@ -268,6 +276,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.battery_level_pct = float(value)
             else:
                 self.battery_level_pct = float(payload)
+            self.mqtt_last_battery_update = datetime.now(timezone.utc)
             _LOGGER.debug("Battery level updated: %.1f%%", self.battery_level_pct)
             self.async_update_listeners()
         except (ValueError, TypeError, json.JSONDecodeError) as exc:
@@ -368,6 +377,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             _LOGGER.error("Unexpected error generating schedule: %s", exc, exc_info=True)
 
         # Sync Claude status from planner attributes (set during generate_schedule)
+        self.claude_last_prompt = self._planner.last_prompt
         self.claude_schedule_source = self._planner.last_source
         self.claude_api_last_error = self._planner.last_error
         if self._planner.last_checked:
@@ -476,8 +486,18 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.claude_api_last_success.isoformat() if self.claude_api_last_success else None
             ),
             "claude_schedule_source": self.claude_schedule_source,
+            "claude_last_prompt": self.claude_last_prompt,
             # MQTT status
             "mqtt_status": self.mqtt_status,
+            "mqtt_last_power_update": (
+                self.mqtt_last_power_update.isoformat() if self.mqtt_last_power_update else None
+            ),
+            "mqtt_last_history_update": (
+                self.mqtt_last_history_update.isoformat() if self.mqtt_last_history_update else None
+            ),
+            "mqtt_last_battery_update": (
+                self.mqtt_last_battery_update.isoformat() if self.mqtt_last_battery_update else None
+            ),
             "mqtt_power_topic": self.config.get(CONF_MQTT_POWER_TOPIC, ""),
             "mqtt_history_topic": self.config.get(CONF_MQTT_HISTORY_TOPIC, ""),
             "mqtt_charge_topic": self.config.get(CONF_MQTT_CHARGE_TOPIC, ""),
