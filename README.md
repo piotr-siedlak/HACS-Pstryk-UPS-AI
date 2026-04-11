@@ -334,6 +334,11 @@ logger:
 
 ## Changelog
 
+### v1.10.8
+- **Midnight price retry**: When the Pstryk API returns 0 price records (common during the TGE midnight transition), the integration now schedules up to 5 automatic retries, 60 seconds apart, without waiting for the next hourly cycle
+- **Empty-price bug fix**: Previously, a successful HTTP 200 response with 0 frames still updated `last_price_refresh`, preventing any retry for up to 6 hours. Now `last_price_refresh` is only updated when actual prices are received
+- **4th refresh trigger**: The coordinator now always attempts a fresh fetch when the current price list is empty, regardless of TTL state
+
 ### v1.10.6
 - **Schedule timeline sensors**: Added `sensor.pstryk_ups_schedule_next_24h` (slots labelled `Now`, `Now +1` … `Now +24`) and `sensor.pstryk_ups_schedule_past_3h` (slots labelled `Now -3`, `Now -2`, `Now -1`). State is a human-readable action summary; `slots` attribute contains the full structured list for use in Lovelace Markdown cards
 

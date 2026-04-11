@@ -132,6 +132,11 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         self._mqtt_repeat_task: asyncio.Task | None = None
 
+        # Price retry state — used when the API returns 0 prices (e.g. midnight
+        # TGE transition).  Retries happen every 60 s, up to 5 attempts.
+        self._price_retry_count: int = 0
+        self._price_retry_task: asyncio.Task | None = None
+
         # Build sub-clients
         session = async_get_clientsession(hass)
         self._pstryk = PstrykAPIClient(
@@ -246,9 +251,80 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     async def async_unload(self) -> None:
         """Cancel all MQTT subscriptions and background tasks. Call during unload."""
         self._stop_mqtt_repeat_task()
+        self._cancel_price_retry()
         for unsub in self._mqtt_unsubs:
             unsub()
         self._mqtt_unsubs.clear()
+
+    # ── Price retry logic ───────────────────────────────────────────────────
+
+    def _cancel_price_retry(self) -> None:
+        """Cancel any pending price retry task."""
+        if self._price_retry_task and not self._price_retry_task.done():
+            self._price_retry_task.cancel()
+        self._price_retry_task = None
+        self._price_retry_count = 0
+
+    def _schedule_price_retry(self) -> None:
+        """Start a background task that retries fetching prices every 60 s (max 5×)."""
+        if self._price_retry_task and not self._price_retry_task.done():
+            return  # already running
+        self._price_retry_task = self.hass.async_create_background_task(
+            self._price_retry_loop(),
+            name=f"{DOMAIN}_price_retry",
+        )
+
+    async def _price_retry_loop(self) -> None:
+        """Retry fetching prices every 60 s until we get data or exhaust attempts."""
+        _PRICE_RETRY_MAX = 5
+        _PRICE_RETRY_INTERVAL = 60  # seconds
+        try:
+            while self._price_retry_count < _PRICE_RETRY_MAX:
+                await asyncio.sleep(_PRICE_RETRY_INTERVAL)
+                self._price_retry_count += 1
+                _LOGGER.info(
+                    "Price retry %d/%d — Pstryk API returned 0 prices, retrying",
+                    self._price_retry_count, _PRICE_RETRY_MAX,
+                )
+                try:
+                    prices, includes_next_day = await self._pstryk.async_get_prices()
+                except PstrykAPIError as exc:
+                    _LOGGER.warning("Price retry %d failed: %s", self._price_retry_count, exc)
+                    continue
+
+                if prices:
+                    _LOGGER.info(
+                        "Price retry %d succeeded: got %d records",
+                        self._price_retry_count, len(prices),
+                    )
+                    now_utc = datetime.now(timezone.utc)
+                    now_warsaw = now_utc.astimezone(self._warsaw)
+                    self.prices = prices
+                    self.last_price_refresh = now_utc
+                    self.pstryk_api_status = "ok"
+                    self.pstryk_api_last_success = now_utc
+                    self.pstryk_api_last_error = None
+                    if includes_next_day:
+                        self._next_day_prices_fetched_date = now_warsaw.date()
+                    await self._refresh_schedule()
+                    self.async_set_updated_data(self._build_state_snapshot())
+                    self._cancel_price_retry()
+                    return
+                else:
+                    _LOGGER.warning(
+                        "Price retry %d: API returned 0 prices again",
+                        self._price_retry_count,
+                    )
+
+            _LOGGER.error(
+                "Price retry exhausted (%d attempts). No prices from Pstryk API. "
+                "Will try again at next scheduled refresh.",
+                _PRICE_RETRY_MAX,
+            )
+            self._price_retry_count = 0
+            self._price_retry_task = None
+        except asyncio.CancelledError:
+            pass
 
     # ── MQTT message handlers ───────────────────────────────────────────────
 
@@ -335,15 +411,19 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _needs_price_refresh(self, now_utc: datetime, now_warsaw: datetime) -> bool:
         """Return True when a Pstryk API call should be made this cycle.
 
-        Three triggers:
-        1. First run (no prices yet).
+        Four triggers:
+        1. First run (no prices yet) or prices list is currently empty.
         2. Configured TTL has elapsed since the last successful fetch.
         3. It is past NEXT_DAY_PRICES_HOUR in Warsaw and we have not yet
            captured next-day prices for today's Warsaw date — this ensures
            we pick up tomorrow's TGE prices shortly after they are published,
            even if the regular TTL has not expired yet.
+        4. Prices were received as an empty list on the last attempt — keep
+           retrying once per hour until we get data.  (The retry background
+           task handles sub-hourly retries; this catches the case where the
+           retry task itself was not running.)
         """
-        if self.last_price_refresh is None:
+        if self.last_price_refresh is None or not self.prices:
             return True
         if (now_utc - self.last_price_refresh) >= self._price_refresh_interval:
             return True
@@ -370,25 +450,41 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             try:
                 _LOGGER.debug("Refreshing Pstryk prices")
                 prices, includes_next_day = await self._pstryk.async_get_prices()
-                self.prices = prices
-                self.last_price_refresh = now_utc
-                self.pstryk_api_status = "ok"
-                self.pstryk_api_last_success = now_utc
-                self.pstryk_api_last_error = None
 
-                if includes_next_day:
-                    self._next_day_prices_fetched_date = now_warsaw.date()
-                    _LOGGER.info(
-                        "Fetched %d price records including next-day prices", len(prices)
-                    )
+                if prices:
+                    # Good data — cancel any pending retry and update state
+                    self._cancel_price_retry()
+                    self.prices = prices
+                    self.last_price_refresh = now_utc
+                    self.pstryk_api_status = "ok"
+                    self.pstryk_api_last_success = now_utc
+                    self.pstryk_api_last_error = None
+
+                    if includes_next_day:
+                        self._next_day_prices_fetched_date = now_warsaw.date()
+                        _LOGGER.info(
+                            "Fetched %d price records including next-day prices", len(prices)
+                        )
+                    else:
+                        _LOGGER.info(
+                            "Fetched %d price records (current day only, next-day not yet published)",
+                            len(prices),
+                        )
+
+                    # Regenerate schedule whenever prices change
+                    await self._refresh_schedule()
                 else:
-                    _LOGGER.info(
-                        "Fetched %d price records (current day only, next-day not yet published)",
-                        len(prices),
+                    # API returned HTTP 200 but 0 frames — common at midnight during
+                    # TGE transition.  Do NOT update last_price_refresh so the next
+                    # hourly cycle retries.  Also start sub-hourly retry task.
+                    self.pstryk_api_status = "error"
+                    self.pstryk_api_last_error = "API returned 0 price records"
+                    _LOGGER.warning(
+                        "Pstryk API returned 0 prices (midnight transition?). "
+                        "Scheduling retries every 60 s (max 5 attempts)."
                     )
+                    self._schedule_price_retry()
 
-                # Regenerate schedule whenever prices change
-                await self._refresh_schedule()
             except PstrykAPIError as exc:
                 self.pstryk_api_status = "error"
                 self.pstryk_api_last_error = str(exc)
