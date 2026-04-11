@@ -449,9 +449,18 @@ class LastClaudePromptSensor(PstrykUPSSensor):
 
 def _schedule_slot(item: dict[str, Any], label: str) -> dict[str, Any]:
     """Return a condensed slot dict with a relative time label."""
+    ts_str: str = item.get("hour", "")
+    hour_utc: int | None = None
+    if ts_str:
+        try:
+            ts = datetime.fromisoformat(ts_str.replace("Z", "+00:00"))
+            hour_utc = ts.hour
+        except ValueError:
+            pass
     return {
         "label": label,
-        "hour": item.get("hour", ""),
+        "hour": ts_str,
+        "hour_utc": hour_utc,   # integer 0–23, safe for '%02d' % slot.hour_utc
         "action": item.get("action", "idle"),
         "price": item.get("price_pln_kwh"),
         "power_kw": item.get("power_kw", 0),
