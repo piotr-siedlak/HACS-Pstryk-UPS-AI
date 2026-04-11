@@ -115,6 +115,11 @@ You are an expert energy management AI optimising a home UPS system.
 - Minimum battery reserve (never discharge below): {battery_min_pct:.1f}%
 - Maximum charge level (never charge above): {battery_max_pct:.1f}%
 
+## ⚠️ Current Battery State
+The battery is currently at **{current_battery_pct:.1f}%**.
+- If {current_battery_pct:.1f}% >= {battery_max_pct:.1f}%: the battery is FULL. Do NOT schedule "charge" for ANY hour until prior discharge actions have reduced the projected battery_level_pct below {battery_max_pct:.1f}%.
+- If {current_battery_pct:.1f}% <= {battery_min_pct:.1f}%: the battery is EMPTY. Do NOT schedule "discharge" for ANY hour until prior charge actions have raised the projected battery_level_pct above {battery_min_pct:.1f}%.
+
 ## Electricity Price Forecast (PLN/kWh, hourly, UTC timestamps)
 Columns: timestamp | full_price PLN/kWh | cheap (provider flag) | expensive (provider flag)
 {price_table}
@@ -138,6 +143,7 @@ Optimisation rules:
 7. If the price spread is too small (<15% between cheap and expensive), prefer IDLE.
 8. Account for charging/discharging efficiency (~90%).
 9. Use the cheap/expensive flags in the price table as hints from the energy provider.
+10. Track battery_level_pct cumulatively across all 24 hours. Each "charge" hour increases it, each "discharge" hour decreases it. Never schedule "charge" when projected battery_level_pct >= {battery_max_pct:.1f}%, and never schedule "discharge" when projected battery_level_pct <= {battery_min_pct:.1f}%.
 
 Return ONLY a valid JSON array — no prose, no markdown, no code fences — with exactly one object per hour for the next 24 hours:
 

@@ -334,6 +334,9 @@ logger:
 
 ## Changelog
 
+### v1.10.9
+- **Full-battery charging fix**: When the battery is already at or above `battery_max_pct`, Claude no longer schedules charge actions. Two-layer enforcement: (1) explicit `⚠️ Current Battery State` warning in the prompt so Claude understands the constraint upfront; (2) hard post-processing pass in `_parse_schedule` that overrides any `charge` → `idle` when simulated battery level is at max (and vice-versa for discharge at min). Overrides are logged at INFO level and visible in the slot `reason` field prefixed with `[overridden: ...]`
+
 ### v1.10.8
 - **Midnight price retry**: When the Pstryk API returns 0 price records (common during the TGE midnight transition), the integration now schedules up to 5 automatic retries, 60 seconds apart, without waiting for the next hourly cycle
 - **Empty-price bug fix**: Previously, a successful HTTP 200 response with 0 frames still updated `last_price_refresh`, preventing any retry for up to 6 hours. Now `last_price_refresh` is only updated when actual prices are received

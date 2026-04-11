@@ -94,7 +94,7 @@ class ClaudePlanner:
                 messages=[{"role": "user", "content": prompt}],
             )
             raw_text = message.content[0].text
-            schedule = self._parse_schedule(raw_text, prices)
+            schedule = self._parse_schedule(raw_text, prices, current_battery_pct)
             if not schedule:
                 raise ClaudePlannerError("Claude returned an empty or invalid schedule")
             _LOGGER.debug("Claude returned %d schedule items", len(schedule))
@@ -200,8 +200,21 @@ class ClaudePlanner:
         self,
         text: str,
         prices: list[dict[str, Any]],
+        current_battery_pct: float = 50.0,
     ) -> list[dict[str, Any]]:
-        """Extract and validate the JSON schedule from Claude's response."""
+        """Extract and validate the JSON schedule from Claude's response.
+
+        After parsing, a hard post-processing pass enforces battery constraints
+        regardless of what Claude returned: charging is blocked when the
+        simulated battery is already at or above battery_max_pct, and
+        discharging is blocked when it is at or below battery_min_pct.
+        """
+        battery_min_pct: float = self._ups_config.get("battery_min_pct", DEFAULT_BATTERY_MIN_PCT)
+        battery_max_pct: float = self._ups_config.get("battery_max_pct", DEFAULT_BATTERY_MAX_PCT)
+        capacity_kwh: float = self._ups_config.get("battery_capacity_kwh", 10.0)
+        max_charge: float = self._ups_config.get("max_charge_rate_kw", 2.0)
+        max_discharge: float = self._ups_config.get("max_discharge_rate_kw", 2.0)
+
         # Strip markdown code fences if Claude added them
         text = re.sub(r"```(?:json)?", "", text, flags=re.IGNORECASE).strip()
 
@@ -243,6 +256,56 @@ class ClaudePlanner:
                     "reason": str(item.get("reason", "")),
                     "battery_level_pct": battery_pct,
                 }
+            )
+
+        # ── Hard constraint enforcement ────────────────────────────────────────
+        # Simulate battery level from the real current value and override any
+        # action that violates the min/max bounds.
+        simulated_pct = current_battery_pct
+        overrides = 0
+        for item in schedule:
+            action = item["action"]
+
+            if action == ACTION_CHARGE:
+                if simulated_pct >= battery_max_pct:
+                    # Battery already full — override to idle
+                    item["action"] = ACTION_IDLE
+                    item["power_kw"] = 0.0
+                    item["reason"] = (
+                        f"[overridden: battery {simulated_pct:.1f}% >= max {battery_max_pct:.1f}%] "
+                        + item["reason"]
+                    )
+                    item["battery_level_pct"] = round(simulated_pct, 1)
+                    overrides += 1
+                else:
+                    delta = (item["power_kw"] / capacity_kwh) * 100.0 if capacity_kwh else 0
+                    simulated_pct = min(battery_max_pct, simulated_pct + delta)
+                    item["battery_level_pct"] = round(simulated_pct, 1)
+
+            elif action == ACTION_DISCHARGE:
+                if simulated_pct <= battery_min_pct:
+                    # Battery already empty — override to idle
+                    item["action"] = ACTION_IDLE
+                    item["power_kw"] = 0.0
+                    item["reason"] = (
+                        f"[overridden: battery {simulated_pct:.1f}% <= min {battery_min_pct:.1f}%] "
+                        + item["reason"]
+                    )
+                    item["battery_level_pct"] = round(simulated_pct, 1)
+                    overrides += 1
+                else:
+                    delta = (abs(item["power_kw"]) / capacity_kwh) * 100.0 if capacity_kwh else 0
+                    simulated_pct = max(battery_min_pct, simulated_pct - delta)
+                    item["battery_level_pct"] = round(simulated_pct, 1)
+
+            else:
+                item["battery_level_pct"] = round(simulated_pct, 1)
+
+        if overrides:
+            _LOGGER.info(
+                "Post-processing overrode %d Claude schedule items due to battery constraints "
+                "(current=%.1f%%, min=%.1f%%, max=%.1f%%)",
+                overrides, current_battery_pct, battery_min_pct, battery_max_pct,
             )
 
         return schedule
