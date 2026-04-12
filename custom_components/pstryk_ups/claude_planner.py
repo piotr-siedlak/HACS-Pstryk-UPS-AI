@@ -1,6 +1,7 @@
 """Claude AI planning engine for UPS charge/discharge scheduling."""
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -39,7 +40,12 @@ class ClaudePlanner:
     """
 
     def __init__(self, api_key: str, ups_config: dict[str, Any]) -> None:
-        self._client = anthropic.AsyncAnthropic(api_key=api_key)
+        # Store the key but DO NOT create the Anthropic client here.
+        # anthropic.AsyncAnthropic() calls ssl.load_verify_locations() which
+        # is a blocking I/O operation — forbidden inside the HA event loop.
+        # The client is created lazily inside an executor on first use.
+        self._api_key = api_key
+        self._client: anthropic.AsyncAnthropic | None = None
         self._ups_config = ups_config  # keys: battery_capacity_kwh, max_charge_rate_kw,
         #        max_discharge_rate_kw, num_strings, ups_model
 
@@ -49,6 +55,15 @@ class ClaudePlanner:
         self.last_checked: datetime | None = None
         self.last_prompt: str = ""
         self.last_request: str = ""   # summary of the last Anthropic API call
+
+    async def _get_client(self) -> anthropic.AsyncAnthropic:
+        """Return the Anthropic client, creating it in an executor if needed."""
+        if self._client is None:
+            api_key = self._api_key
+            self._client = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: anthropic.AsyncAnthropic(api_key=api_key)
+            )
+        return self._client
 
     # ── Public API ──────────────────────────────────────────────────────────
 
@@ -88,7 +103,8 @@ class ClaudePlanner:
                 f"  prompt_chars={len(prompt)}  prompt_lines={prompt.count(chr(10))}"
             )
             _LOGGER.debug("Requesting schedule from Claude (%s)", CLAUDE_MODEL)
-            message = await self._client.messages.create(
+            client = await self._get_client()
+            message = await client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=CLAUDE_MAX_TOKENS,
                 messages=[{"role": "user", "content": prompt}],
@@ -115,7 +131,8 @@ class ClaudePlanner:
     async def async_validate_key(self) -> bool:
         """Return True when the Claude API key is accepted."""
         try:
-            await self._client.messages.create(
+            client = await self._get_client()
+            await client.messages.create(
                 model=CLAUDE_MODEL,
                 max_tokens=10,
                 messages=[{"role": "user", "content": "ping"}],

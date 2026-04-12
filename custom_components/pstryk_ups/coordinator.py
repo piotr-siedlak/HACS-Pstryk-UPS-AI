@@ -275,27 +275,51 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
 
     async def _price_retry_loop(self) -> None:
-        """Retry fetching prices every 60 s until we get data or exhaust attempts."""
-        _PRICE_RETRY_MAX = 5
-        _PRICE_RETRY_INTERVAL = 60  # seconds
+        """Retry fetching prices after getting 0 results from the Pstryk API.
+
+        Strategy (handles the ~2 h midnight TGE transition window):
+          - Phase 1: retry every 60 s for the first 5 attempts (fast burst, 5 min)
+          - Phase 2: if still no data, retry every 5 min for up to 3 h total
+        """
+        _FAST_RETRIES = 5
+        _FAST_INTERVAL = 60       # seconds
+        _SLOW_INTERVAL = 5 * 60   # seconds
+        _MAX_TOTAL_MINUTES = 180  # give up after 3 h
+        start_time = datetime.now(timezone.utc)
+
         try:
-            while self._price_retry_count < _PRICE_RETRY_MAX:
-                await asyncio.sleep(_PRICE_RETRY_INTERVAL)
+            while True:
+                elapsed_min = (datetime.now(timezone.utc) - start_time).total_seconds() / 60
+                if elapsed_min >= _MAX_TOTAL_MINUTES:
+                    _LOGGER.error(
+                        "Price retry exhausted after %.0f min. No prices from Pstryk API. "
+                        "Will try again at next scheduled refresh.",
+                        elapsed_min,
+                    )
+                    self._price_retry_count = 0
+                    self._price_retry_task = None
+                    return
+
+                interval = _FAST_INTERVAL if self._price_retry_count < _FAST_RETRIES else _SLOW_INTERVAL
+                await asyncio.sleep(interval)
                 self._price_retry_count += 1
+
+                phase = "fast" if self._price_retry_count <= _FAST_RETRIES else "slow"
                 _LOGGER.info(
-                    "Price retry %d/%d — Pstryk API returned 0 prices, retrying",
-                    self._price_retry_count, _PRICE_RETRY_MAX,
+                    "Price retry #%d (%s, %.0f min elapsed) — Pstryk returned 0 prices, retrying",
+                    self._price_retry_count, phase, elapsed_min,
                 )
+
                 try:
                     prices, includes_next_day = await self._pstryk.async_get_prices()
                 except PstrykAPIError as exc:
-                    _LOGGER.warning("Price retry %d failed: %s", self._price_retry_count, exc)
+                    _LOGGER.warning("Price retry #%d failed: %s", self._price_retry_count, exc)
                     continue
 
                 if prices:
                     _LOGGER.info(
-                        "Price retry %d succeeded: got %d records",
-                        self._price_retry_count, len(prices),
+                        "Price retry #%d succeeded: got %d records after %.0f min",
+                        self._price_retry_count, len(prices), elapsed_min,
                     )
                     now_utc = datetime.now(timezone.utc)
                     now_warsaw = now_utc.astimezone(self._warsaw)
@@ -312,17 +336,10 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return
                 else:
                     _LOGGER.warning(
-                        "Price retry %d: API returned 0 prices again",
-                        self._price_retry_count,
+                        "Price retry #%d: API still returned 0 prices (%.0f min elapsed)",
+                        self._price_retry_count, elapsed_min,
                     )
 
-            _LOGGER.error(
-                "Price retry exhausted (%d attempts). No prices from Pstryk API. "
-                "Will try again at next scheduled refresh.",
-                _PRICE_RETRY_MAX,
-            )
-            self._price_retry_count = 0
-            self._price_retry_task = None
         except asyncio.CancelledError:
             pass
 

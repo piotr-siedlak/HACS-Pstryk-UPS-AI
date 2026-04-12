@@ -334,6 +334,10 @@ logger:
 
 ## Changelog
 
+### v1.10.10
+- **Blocking SSL call fix**: `anthropic.AsyncAnthropic()` was calling `ssl.load_verify_locations()` during `__init__` — a blocking I/O operation forbidden inside the HA event loop. The client is now created lazily on first use via `run_in_executor`, eliminating the `Detected blocking call` warning in HA logs
+- **Extended midnight retry**: Price retry now runs in two phases — 5 fast retries every 60 s (5 min), then slow retries every 5 min for up to 3 h total. This covers the full TGE midnight transition window instead of giving up after 5 minutes and waiting for the next hourly cycle
+
 ### v1.10.9
 - **Full-battery charging fix**: When the battery is already at or above `battery_max_pct`, Claude no longer schedules charge actions. Two-layer enforcement: (1) explicit `⚠️ Current Battery State` warning in the prompt so Claude understands the constraint upfront; (2) hard post-processing pass in `_parse_schedule` that overrides any `charge` → `idle` when simulated battery level is at max (and vice-versa for discharge at min). Overrides are logged at INFO level and visible in the slot `reason` field prefixed with `[overridden: ...]`
 
