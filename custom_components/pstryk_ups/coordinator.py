@@ -428,17 +428,16 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _needs_price_refresh(self, now_utc: datetime, now_warsaw: datetime) -> bool:
         """Return True when a Pstryk API call should be made this cycle.
 
-        Four triggers:
+        Five triggers:
         1. First run (no prices yet) or prices list is currently empty.
         2. Configured TTL has elapsed since the last successful fetch.
         3. It is past NEXT_DAY_PRICES_HOUR in Warsaw and we have not yet
-           captured next-day prices for today's Warsaw date — this ensures
-           we pick up tomorrow's TGE prices shortly after they are published,
-           even if the regular TTL has not expired yet.
+           captured next-day prices for today's Warsaw date.
         4. Prices were received as an empty list on the last attempt — keep
-           retrying once per hour until we get data.  (The retry background
-           task handles sub-hourly retries; this catches the case where the
-           retry task itself was not running.)
+           retrying once per hour until we get data.
+        5. All cached prices are in the past — the fetch window has expired
+           (e.g. current-day-only prices fetched before 15:00 Warsaw that
+           have now passed midnight Warsaw).
         """
         if self.last_price_refresh is None or not self.prices:
             return True
@@ -455,6 +454,31 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 now_warsaw.hour, self._next_day_prices_fetched_date,
             )
             return True
+        # All cached prices are in the past — window expired
+        now_hour = now_utc.replace(minute=0, second=0, microsecond=0)
+        try:
+            if all(
+                datetime.fromisoformat(p.get("timestamp", "1970-01-01T00:00:00Z").replace("Z", "+00:00")) < now_hour
+                for p in self.prices
+            ):
+                _LOGGER.info(
+                    "All %d cached prices are in the past — forcing re-fetch", len(self.prices)
+                )
+                return True
+        except (ValueError, TypeError):
+            pass
+        return False
+
+    def _has_future_schedule_entries(self) -> bool:
+        """Return True if the schedule contains at least one entry at or after the current hour."""
+        now = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
+        for item in self.schedule:
+            try:
+                ts = datetime.fromisoformat(item.get("hour", "").replace("Z", "+00:00"))
+                if ts >= now:
+                    return True
+            except ValueError:
+                pass
         return False
 
     async def _async_update_data(self) -> dict[str, Any]:
@@ -512,6 +536,15 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     raise UpdateFailed(
                         f"Pstryk API error and no cached prices: {exc}"
                     ) from exc
+
+        # If the schedule has run out of future entries but prices are available,
+        # regenerate without waiting for the next price re-fetch.  This covers
+        # the midnight rollover case where Claude's 24-h window has expired.
+        if self.prices and not self._has_future_schedule_entries():
+            _LOGGER.info(
+                "Schedule has no future entries — regenerating from cached prices"
+            )
+            await self._refresh_schedule()
 
         # Apply auto-schedule for the current hour
         if self.auto_schedule_enabled and self.schedule:

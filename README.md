@@ -334,6 +334,9 @@ logger:
 
 ## Changelog
 
+### v1.10.11
+- **Midnight "no data" fix**: Root cause identified — the schedule is only regenerated when prices are re-fetched, so when the 24-hour Claude schedule window expired at midnight the sensor showed "no data" until the next TTL-based price fetch. Two fixes: (1) if all cached prices are now in the past, force an immediate re-fetch regardless of TTL; (2) if prices exist but the schedule has no future entries, regenerate the schedule from cached prices on the next hourly coordinator cycle — no manual "Refresh Prices" needed
+
 ### v1.10.10
 - **Blocking SSL call fix**: `anthropic.AsyncAnthropic()` was calling `ssl.load_verify_locations()` during `__init__` — a blocking I/O operation forbidden inside the HA event loop. The client is now created lazily on first use via `run_in_executor`, eliminating the `Detected blocking call` warning in HA logs
 - **Extended midnight retry**: Price retry now runs in two phases — 5 fast retries every 60 s (5 min), then slow retries every 5 min for up to 3 h total. This covers the full TGE midnight transition window instead of giving up after 5 minutes and waiting for the next hourly cycle
