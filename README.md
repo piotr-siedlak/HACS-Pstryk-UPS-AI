@@ -334,6 +334,9 @@ logger:
 
 ## Changelog
 
+### v1.10.12
+- **Midnight "no data" definitive fix**: Added a 6th refresh trigger — if the cached price window does not contain an entry for the **current UTC hour**, a re-fetch is forced immediately regardless of TTL or any other state. This directly mirrors the mechanism used by the manual "Refresh Prices" button and is the most reliable fix for the midnight rollover gap. Additionally, when the schedule has no future entries, the price TTL is now reset (`last_price_refresh = None`) so the **next** hourly cycle performs a full re-fetch instead of regenerating from potentially stale cached prices.
+
 ### v1.10.11
 - **Midnight "no data" fix**: Root cause identified — the schedule is only regenerated when prices are re-fetched, so when the 24-hour Claude schedule window expired at midnight the sensor showed "no data" until the next TTL-based price fetch. Two fixes: (1) if all cached prices are now in the past, force an immediate re-fetch regardless of TTL; (2) if prices exist but the schedule has no future entries, regenerate the schedule from cached prices on the next hourly coordinator cycle — no manual "Refresh Prices" needed
 

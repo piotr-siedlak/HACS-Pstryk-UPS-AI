@@ -428,7 +428,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     def _needs_price_refresh(self, now_utc: datetime, now_warsaw: datetime) -> bool:
         """Return True when a Pstryk API call should be made this cycle.
 
-        Five triggers:
+        Six triggers:
         1. First run (no prices yet) or prices list is currently empty.
         2. Configured TTL has elapsed since the last successful fetch.
         3. It is past NEXT_DAY_PRICES_HOUR in Warsaw and we have not yet
@@ -438,6 +438,9 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         5. All cached prices are in the past — the fetch window has expired
            (e.g. current-day-only prices fetched before 15:00 Warsaw that
            have now passed midnight Warsaw).
+        6. No price entry exists for the current UTC hour — the cached window
+           does not cover right now (e.g. midnight rollover edge case where
+           the window ended just before the current hour).
         """
         if self.last_price_refresh is None or not self.prices:
             return True
@@ -467,6 +470,15 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 return True
         except (ValueError, TypeError):
             pass
+        # No price for the current UTC hour — cache window doesn't cover right now.
+        # This is the primary fix for the midnight rollover: at day boundary the cached
+        # window may end exactly at midnight leaving the new hour uncovered.
+        if self._get_current_price() is None:
+            _LOGGER.info(
+                "No cached price for current UTC hour %s — forcing re-fetch",
+                now_hour.strftime("%Y-%m-%dT%H:00:00Z"),
+            )
+            return True
         return False
 
     def _has_future_schedule_entries(self) -> bool:
@@ -537,14 +549,17 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         f"Pstryk API error and no cached prices: {exc}"
                     ) from exc
 
-        # If the schedule has run out of future entries but prices are available,
-        # regenerate without waiting for the next price re-fetch.  This covers
-        # the midnight rollover case where Claude's 24-h window has expired.
-        if self.prices and not self._has_future_schedule_entries():
+        # If the schedule has run out of future entries, regenerate it immediately from
+        # cached prices.  Also reset the price TTL so the next hourly cycle re-fetches
+        # fresh prices (the same mechanism the manual Refresh button uses).
+        if not self._has_future_schedule_entries():
             _LOGGER.info(
-                "Schedule has no future entries — regenerating from cached prices"
+                "Schedule has no future entries — regenerating from cached prices "
+                "and resetting price TTL for next-cycle re-fetch"
             )
-            await self._refresh_schedule()
+            self.last_price_refresh = None  # force price re-fetch next cycle (trigger 1)
+            if self.prices:
+                await self._refresh_schedule()
 
         # Apply auto-schedule for the current hour
         if self.auto_schedule_enabled and self.schedule:
