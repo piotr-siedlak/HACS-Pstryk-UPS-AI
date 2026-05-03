@@ -137,6 +137,13 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._price_retry_count: int = 0
         self._price_retry_task: asyncio.Task | None = None
 
+        # Watchdog task — runs every 5 minutes independently of the hourly
+        # coordinator cycle.  Catches the case where the cached price window
+        # does not cover "now" (typical at day-change / midnight rollover) and
+        # forces an immediate refresh, mirroring the manual button behaviour.
+        self._watchdog_task: asyncio.Task | None = None
+        self._watchdog_interval: int = 5 * 60  # seconds
+
         # Build sub-clients
         session = async_get_clientsession(hass)
         self._pstryk = PstrykAPIClient(
@@ -252,6 +259,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Cancel all MQTT subscriptions and background tasks. Call during unload."""
         self._stop_mqtt_repeat_task()
         self._cancel_price_retry()
+        self._stop_watchdog()
         for unsub in self._mqtt_unsubs:
             unsub()
         self._mqtt_unsubs.clear()
@@ -340,6 +348,58 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                         self._price_retry_count, elapsed_min,
                     )
 
+        except asyncio.CancelledError:
+            pass
+
+    # ── Stale-price watchdog ────────────────────────────────────────────────
+    # Runs every 5 minutes regardless of the hourly coordinator cycle.  This
+    # is the definitive guarantee that the current_price sensor never gets
+    # stuck at "no data" — when the cached window does not cover the current
+    # UTC hour, the watchdog forces an immediate refresh by mimicking exactly
+    # what the manual Refresh button does.
+
+    def start_watchdog(self) -> None:
+        """Start the stale-price watchdog background task."""
+        if self._watchdog_task and not self._watchdog_task.done():
+            return
+        self._watchdog_task = self.hass.async_create_background_task(
+            self._watchdog_loop(),
+            name=f"{DOMAIN}_price_watchdog",
+        )
+        _LOGGER.debug("Price watchdog started (interval=%ds)", self._watchdog_interval)
+
+    def _stop_watchdog(self) -> None:
+        if self._watchdog_task and not self._watchdog_task.done():
+            self._watchdog_task.cancel()
+        self._watchdog_task = None
+
+    async def _watchdog_loop(self) -> None:
+        """Every 5 min: if the cached window doesn't cover the current UTC hour, force refresh."""
+        try:
+            while True:
+                await asyncio.sleep(self._watchdog_interval)
+                # Don't fight the retry loop — if it's already trying, leave it alone
+                if self._price_retry_task and not self._price_retry_task.done():
+                    continue
+                if not self.prices:
+                    # Initial state — the hourly cycle / first_refresh handles this
+                    continue
+                if self._get_current_price() is not None:
+                    continue
+                _LOGGER.warning(
+                    "Watchdog: no cached price for current UTC hour %s "
+                    "(prices=%d, first=%s, last=%s) — forcing refresh",
+                    datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:00:00Z"),
+                    len(self.prices),
+                    self.prices[0].get("timestamp", "?") if self.prices else "?",
+                    self.prices[-1].get("timestamp", "?") if self.prices else "?",
+                )
+                # Mirror the manual button: reset TTL and request a refresh
+                self.last_price_refresh = None
+                try:
+                    await self.async_request_refresh()
+                except Exception as exc:  # noqa: BLE001
+                    _LOGGER.error("Watchdog refresh request failed: %s", exc)
         except asyncio.CancelledError:
             pass
 

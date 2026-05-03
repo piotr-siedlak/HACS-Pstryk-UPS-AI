@@ -334,6 +334,9 @@ logger:
 
 ## Changelog
 
+### v1.10.13
+- **Stale-price watchdog**: Added a dedicated 5-minute background task that runs independently of the hourly coordinator cycle.  Whenever it detects that the cached price window does not cover the current UTC hour, it forces an immediate refresh by mirroring the manual Refresh Prices button (resets `last_price_refresh = None` then requests an update).  This is the **definitive** fix for the midnight / day-change "no data" symptom — the integration now self-heals within at most 5 minutes regardless of when HA was started, the configured refresh interval, or whether the previous hourly cycle landed on the rollover boundary.  When the watchdog triggers, full diagnostic context (cache size, first/last cached timestamps, current UTC hour) is logged at WARNING level so the underlying cause is visible.
+
 ### v1.10.12
 - **Midnight "no data" definitive fix**: Added a 6th refresh trigger — if the cached price window does not contain an entry for the **current UTC hour**, a re-fetch is forced immediately regardless of TTL or any other state. This directly mirrors the mechanism used by the manual "Refresh Prices" button and is the most reliable fix for the midnight rollover gap. Additionally, when the schedule has no future entries, the price TTL is now reset (`last_price_refresh = None`) so the **next** hourly cycle performs a full re-fetch instead of regenerating from potentially stale cached prices.
 

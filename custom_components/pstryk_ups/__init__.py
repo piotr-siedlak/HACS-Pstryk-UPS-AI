@@ -46,6 +46,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
+    # Start the stale-price watchdog (5-minute background check that recovers
+    # from any midnight / day-change "no data" condition without waiting for
+    # the next hourly coordinator cycle).
+    coordinator.start_watchdog()
+
     # Reload entry when its data is updated (e.g. from reconfigure flow)
     entry.async_on_unload(entry.add_update_listener(_async_reload_entry))
 
