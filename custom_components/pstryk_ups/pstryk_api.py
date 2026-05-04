@@ -2,7 +2,7 @@
 
 Prices come from the TGE (Polish Power Exchange) spot market:
   - Current-day prices: always available.
-  - Next-day prices:    published each afternoon, typically around 14:00–15:00
+  - Next-day prices:    published each midday, typically around 12:00
                         Warsaw/CET time.  Before that hour only today's prices
                         exist; after it we extend the fetch window to cover the
                         full next day.
@@ -111,7 +111,7 @@ class PstrykAPIClient:
                                final Warsaw hour of the day (23:00–00:00 Warsaw).
 
         After ``NEXT_DAY_PRICES_HOUR`` in Warsaw (TGE publishes next-day prices
-        ~14:00–15:00 CET), we extend ``window_end`` by one more day so that the
+        ~12:00 CET), we extend ``window_end`` by one more day so that the
         full next-day price table is included in one API call.
         """
         now_utc = datetime.now(timezone.utc)
@@ -146,8 +146,8 @@ class PstrykAPIClient:
         - ``prices`` is a list of ``{"timestamp", "price", "price_gross"}`` dicts.
         - ``includes_next_day`` is True when the response covers tomorrow's prices.
 
-        Before 15:00 Warsaw only current-day remaining hours are returned.
-        After 15:00 Warsaw the full next day is included as well.
+        Before 12:00 Warsaw only current-day remaining hours are returned.
+        After 12:00 Warsaw the full next day is included as well.
         """
         window_start, window_end, includes_next_day = self.get_fetch_window()
 

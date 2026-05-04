@@ -115,7 +115,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._price_refresh_interval = timedelta(hours=refresh_interval_h)
 
         # Track whether we already fetched next-day prices today (Warsaw date).
-        # TGE publishes next-day prices around 14–15:00 Warsaw; we force one
+        # TGE publishes next-day prices around 12:00 Warsaw; we force one
         # extra refresh after NEXT_DAY_PRICES_HOUR if this is still None / stale.
         self._next_day_prices_fetched_date: date | None = None
         self._warsaw = ZoneInfo(WARSAW_TZ_NAME)
@@ -496,7 +496,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         4. Prices were received as an empty list on the last attempt — keep
            retrying once per hour until we get data.
         5. All cached prices are in the past — the fetch window has expired
-           (e.g. current-day-only prices fetched before 15:00 Warsaw that
+           (e.g. current-day-only prices fetched before 12:00 Warsaw that
            have now passed midnight Warsaw).
         6. No price entry exists for the current UTC hour — the cached window
            does not cover right now (e.g. midnight rollover edge case where
@@ -738,7 +738,7 @@ class PstrykUPSCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 self.last_price_refresh.isoformat() if self.last_price_refresh else None
             ),
             # Indicates whether tomorrow's prices are included in the current dataset.
-            # False before ~15:00 Warsaw; True once TGE publishes next-day prices.
+            # False before ~12:00 Warsaw; True once TGE publishes next-day prices.
             "next_day_prices_available": self._next_day_prices_fetched_date == now.astimezone(self._warsaw).date(),
             # Pstryk API status
             "pstryk_api_status": self.pstryk_api_status,

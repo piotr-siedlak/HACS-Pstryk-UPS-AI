@@ -334,6 +334,9 @@ logger:
 
 ## Changelog
 
+### v1.10.14
+- **Next-day price publish hour updated**: TGE now publishes next-day spot prices at **12:00 Warsaw** (previously assumed 15:00). The `NEXT_DAY_PRICES_HOUR` constant is updated accordingly, so the integration now extends the fetch window to cover the full next day from midday onwards, giving Claude an extra 3 hours of forward-looking data for better overnight schedule optimisation.
+
 ### v1.10.13
 - **Stale-price watchdog**: Added a dedicated 5-minute background task that runs independently of the hourly coordinator cycle.  Whenever it detects that the cached price window does not cover the current UTC hour, it forces an immediate refresh by mirroring the manual Refresh Prices button (resets `last_price_refresh = None` then requests an update).  This is the **definitive** fix for the midnight / day-change "no data" symptom — the integration now self-heals within at most 5 minutes regardless of when HA was started, the configured refresh interval, or whether the previous hourly cycle landed on the rollover boundary.  When the watchdog triggers, full diagnostic context (cache size, first/last cached timestamps, current UTC hour) is logged at WARNING level so the underlying cause is visible.
 

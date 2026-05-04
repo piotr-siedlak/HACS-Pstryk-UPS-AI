@@ -49,10 +49,10 @@ PSTRYK_UNIFIED_ENDPOINT = "/integrations/meter-data/unified-metrics/"
 PSTRYK_API_TIMEOUT = 30               # seconds
 
 # ── Price availability timing ─────────────────────────────────────────────────
-# TGE (Polish Power Exchange) publishes next-day spot prices each afternoon.
+# TGE (Polish Power Exchange) publishes next-day spot prices each midday.
 # Before this hour (Warsaw/CET time) only current-day prices are available;
 # after it we extend the fetch window to cover the full next day.
-NEXT_DAY_PRICES_HOUR = 15             # 15:00 Warsaw time
+NEXT_DAY_PRICES_HOUR = 12             # 12:00 Warsaw time
 WARSAW_TZ_NAME = "Europe/Warsaw"
 
 # ── Claude AI ────────────────────────────────────────────────────────────────
